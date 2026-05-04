@@ -16,8 +16,8 @@ It is meant for quick checks as new boards arrive from production.
 - Debug: Atmel-ICE via SWD.
 - Bench LED: PB23, active high.
 - Bench button: PB22, active high with external pulldown.
-- PA04 is suspect/damaged on the current bench board. Do not use it in generic
-  bring-up firmware; keep PA04-specific tests isolated.
+- PA03 and PA04 are VREF conditioning pins with 22 ohm series resistance and
+  22 nF to ground; treat them as capacitively loaded analog/reference pins.
 
 ## Build
 
@@ -35,6 +35,8 @@ Key settings are in `platformio.ini`:
 - `board_build.f_cpu = 48000000L`
 - `board_build.ldscript = linker/samc21j18.ld`
 - `build_flags = -std=gnu++23 -D__SAMC21J18A__ -DDONT_USE_CMSIS_INIT ...`
+- `SAM_BOARD_TEST_XOSC32K=0` by default; set to `1` only on boards populated
+  with the optional 32.768 kHz crystal.
 - `upload_protocol = atmel-ice`
 - `debug_tool = atmel-ice`
 
@@ -42,7 +44,7 @@ Key settings are in `platformio.ini`:
 
 ```text
 src/
-  main.cpp          - boot, timebase, serial, quartz test loop
+  main.cpp          - boot, timebase, serial, one-shot quartz test report
   init.hpp          - minimal OSC48M/GCLK0 setup
   quartz_test.hpp   - serial report for XOSC and XOSC32K
   pins.hpp          - UART and bench fixture pin aliases
@@ -65,28 +67,18 @@ Core utilities worth preserving:
 ## Active Firmware
 
 `sys_init()` only configures flash wait states, OSC48M full speed, and GCLK0.
-The external crystals are started by `QuartzTest` with timeouts, so a missing or
-bad crystal cannot trap boot before serial output.
+`QuartzTest` starts the 24 MHz external crystal with a timeout. The optional
+32.768 kHz crystal test is compile-time controlled by `SAM_BOARD_TEST_XOSC32K`.
 
-The serial report repeats every 2 seconds:
+The serial report is printed once after reset:
 
 ```text
 SAMC21 board bring-up
 UART: SERCOM5 PB30/PB31, 1000000 baud
 OSC48M/GCLK0: OK 48000000 Hz
 XOSC 24 MHz PA14/PA15: OK/FAIL ...
-XOSC32K PA00/PA01: OK/FAIL ...
+XOSC32K PA00/PA01: SKIP build_flag=SAM_BOARD_TEST_XOSC32K=0
 ```
 
-If the 32.768 kHz crystal is not populated, an `XOSC32K FAIL` report is expected
-and is not a boot failure.
-
-## Next PA04 Work
-
-After this baseline, add PA04 tests as an explicit diagnostic mode. Suggested
-order:
-
-1. Passive GPIO input test with external low/high and pull disabled.
-2. Internal pull-up/pull-down observation if safe for the board state.
-3. Weak output drive through a series resistor, measured externally.
-4. ADC0/AIN4 and AC/AIN0 only after GPIO behavior is understood.
+When `SAM_BOARD_TEST_XOSC32K=1`, the XOSC32K line reports `OK`/`FAIL`,
+`ready_wait_ms`, status, and `gclk3`.

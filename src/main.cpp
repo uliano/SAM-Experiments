@@ -10,5 +10,8 @@ int main(void)
     Serial.init(1000000);
 
     QuartzTest::init();
-    QuartzTest::run_forever();
+    QuartzTest::report_once();
+
+    for (;;)
+        __WFI();
 }

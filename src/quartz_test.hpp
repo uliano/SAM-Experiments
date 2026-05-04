@@ -7,10 +7,15 @@
 #include "serial.hpp"
 #include "timebase.hpp"
 
+#ifndef SAM_BOARD_TEST_XOSC32K
+#define SAM_BOARD_TEST_XOSC32K 0
+#endif
+
 struct QuartzTest
 {
+    static constexpr bool test_xosc32k = SAM_BOARD_TEST_XOSC32K != 0;
     static constexpr uint32_t xosc_timeout_ms = 100;
-    static constexpr uint32_t xosc32k_timeout_ms = 3000;
+    static constexpr uint32_t xosc32k_timeout_ms = 6000;
     static constexpr uint32_t report_period_ms = 2000;
 
     static void init(void)
@@ -19,9 +24,19 @@ struct QuartzTest
         xosc_elapsed_ms_ = wait_for_xosc_ms(xosc_timeout_ms);
         refresh_xosc_generators();
 
-        start_xosc32k();
-        xosc32k_elapsed_ms_ = wait_for_xosc32k_ms(xosc32k_timeout_ms);
+        if constexpr (test_xosc32k)
+        {
+            start_xosc32k();
+            xosc32k_elapsed_ms_ = wait_for_xosc32k_ms(xosc32k_timeout_ms);
+            refresh_xosc32k_generator();
+        }
+    }
+
+    static void report_once(void)
+    {
+        refresh_xosc_generators();
         refresh_xosc32k_generator();
+        print_report();
     }
 
     static void run_forever(void)
@@ -119,6 +134,9 @@ private:
 
     static void refresh_xosc32k_generator(void)
     {
+        if constexpr (!test_xosc32k)
+            return;
+
         if (!xosc32k_ready() || xosc32k_generator_configured_)
             return;
 
@@ -158,15 +176,23 @@ private:
         print_ok_fail(xosc_generators_configured_);
         end_line();
 
-        Serial.print("XOSC32K PA00/PA01: ");
-        print_ok_fail(xosc32k_ready());
-        Serial.print(" ready_wait_ms=");
-        Serial.print(xosc32k_elapsed_ms_);
-        Serial.print(" status=");
-        Serial.print(OSC32KCTRL->STATUS.reg, PrintBase::Hex);
-        Serial.print(" gclk3=");
-        print_ok_fail(xosc32k_generator_configured_);
-        end_line();
+        if constexpr (test_xosc32k)
+        {
+            Serial.print("XOSC32K PA00/PA01: ");
+            print_ok_fail(xosc32k_ready());
+            Serial.print(" ready_wait_ms=");
+            Serial.print(xosc32k_elapsed_ms_);
+            Serial.print(" status=");
+            Serial.print(OSC32KCTRL->STATUS.reg, PrintBase::Hex);
+            Serial.print(" gclk3=");
+            print_ok_fail(xosc32k_generator_configured_);
+            end_line();
+        }
+        else
+        {
+            Serial.print("XOSC32K PA00/PA01: SKIP build_flag=SAM_BOARD_TEST_XOSC32K=0");
+            end_line();
+        }
     }
 
     static void print_ok_fail(bool ok)

@@ -6,7 +6,7 @@ The default firmware starts COM5 at 1000000 baud and reports board-clock status:
 
 - OSC48M/GCLK0 at 48 MHz
 - 24 MHz external crystal on PA14/PA15
-- optional 32.768 kHz external crystal on PA00/PA01
+- optional compile-time 32.768 kHz external crystal test on PA00/PA01
 
 External crystal checks use timeouts, so serial output still appears on boards
 with a missing or faulty crystal.
@@ -26,15 +26,17 @@ SAMC21 board bring-up
 UART: SERCOM5 PB30/PB31, 1000000 baud
 OSC48M/GCLK0: OK 48000000 Hz
 XOSC 24 MHz PA14/PA15: OK ready_wait_ms=... status=... gclk1=OK gclk2=OK
-XOSC32K PA00/PA01: OK ready_wait_ms=... status=... gclk3=OK
+XOSC32K PA00/PA01: SKIP build_flag=SAM_BOARD_TEST_XOSC32K=0
 ```
 
-If the 32.768 kHz crystal is not populated, `XOSC32K FAIL` is expected.
+Set `SAM_BOARD_TEST_XOSC32K=1` in `platformio.ini` only for boards populated
+with the optional 32.768 kHz crystal. With that flag enabled, the XOSC32K line
+reports `OK`/`FAIL`, `ready_wait_ms`, status, and `gclk3`.
 
 ## Hardware Notes
 
 - PB30/PB31 are reserved for UART to USB.
 - PA14/PA15 are reserved for the 24 MHz crystal.
 - PA00/PA01 are reserved for the 32.768 kHz crystal footprint.
-- PA04 is suspect on the current bench board. Keep PA04 tests isolated from the
-  generic bring-up firmware.
+- PA03 and PA04 are VREF conditioning pins with 22 ohm series resistance and
+  22 nF to ground; treat them as capacitively loaded analog/reference pins.

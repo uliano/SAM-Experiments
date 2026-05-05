@@ -59,11 +59,16 @@ private:
     static void start_xosc_24mhz(void)
     {
         OSCCTRL->XOSCCTRL.reg = 0u;
+        OSCCTRL->CFDPRESC.reg = OSCCTRL_CFDPRESC_CFDPRESC(0);
+        OSCCTRL->INTFLAG.reg =
+            OSCCTRL_INTFLAG_XOSCRDY |
+            OSCCTRL_INTFLAG_XOSCFAIL;
 
         OSCCTRL->XOSCCTRL.reg =
             OSCCTRL_XOSCCTRL_STARTUP(8) |
             OSCCTRL_XOSCCTRL_AMPGC |
             OSCCTRL_XOSCCTRL_GAIN(4) |
+            OSCCTRL_XOSCCTRL_CFDEN |
             OSCCTRL_XOSCCTRL_XTALEN |
             OSCCTRL_XOSCCTRL_ENABLE;
     }
@@ -73,6 +78,7 @@ private:
         OSC32KCTRL->INTFLAG.reg =
             OSC32KCTRL_INTFLAG_XOSC32KRDY |
             OSC32KCTRL_INTFLAG_CLKFAIL;
+        OSC32KCTRL->CFDCTRL.reg = OSC32KCTRL_CFDCTRL_CFDEN;
 
         OSC32KCTRL->XOSC32K.reg =
             OSC32KCTRL_XOSC32K_STARTUP(7) |
@@ -86,16 +92,39 @@ private:
         return 0u != (OSCCTRL->STATUS.reg & OSCCTRL_STATUS_XOSCRDY);
     }
 
+    static bool xosc_failed(void)
+    {
+        return 0u != ((OSCCTRL->STATUS.reg & OSCCTRL_STATUS_XOSCFAIL) |
+                      (OSCCTRL->INTFLAG.reg & OSCCTRL_INTFLAG_XOSCFAIL));
+    }
+
+    static bool xosc_active(void)
+    {
+        return xosc_ready() && !xosc_failed();
+    }
+
     static bool xosc32k_ready(void)
     {
         return 0u != (OSC32KCTRL->STATUS.reg & OSC32KCTRL_STATUS_XOSC32KRDY);
+    }
+
+    static bool xosc32k_failed(void)
+    {
+        return 0u != ((OSC32KCTRL->STATUS.reg & OSC32KCTRL_STATUS_CLKFAIL) |
+                      (OSC32KCTRL->INTFLAG.reg & OSC32KCTRL_INTFLAG_CLKFAIL));
+    }
+
+    static bool xosc32k_active(void)
+    {
+        return xosc32k_ready() && !xosc32k_failed();
     }
 
     static uint32_t wait_for_xosc_ms(uint32_t timeout_ms)
     {
         const uint32_t start = Timebase::millis();
 
-        while (!xosc_ready() && ((Timebase::millis() - start) < timeout_ms))
+        while (!xosc_ready() && !xosc_failed() &&
+               ((Timebase::millis() - start) < timeout_ms))
             __WFI();
 
         return Timebase::millis() - start;
@@ -105,7 +134,8 @@ private:
     {
         const uint32_t start = Timebase::millis();
 
-        while (!xosc32k_ready() && ((Timebase::millis() - start) < timeout_ms))
+        while (!xosc32k_ready() && !xosc32k_failed() &&
+               ((Timebase::millis() - start) < timeout_ms))
             __WFI();
 
         return Timebase::millis() - start;
@@ -113,7 +143,7 @@ private:
 
     static void refresh_xosc_generators(void)
     {
-        if (!xosc_ready() || xosc_generators_configured_)
+        if (!xosc_active() || xosc_generators_configured_)
             return;
 
         // GCLK1 = XOSC @ 24 MHz.
@@ -137,7 +167,7 @@ private:
         if constexpr (!test_xosc32k)
             return;
 
-        if (!xosc32k_ready() || xosc32k_generator_configured_)
+        if (!xosc32k_active() || xosc32k_generator_configured_)
             return;
 
         // GCLK3 = XOSC32K @ 32.768 kHz for future diagnostics.
@@ -161,31 +191,39 @@ private:
         print_line("SAMC21 board bring-up");
         print_line("UART: SERCOM5 PB30/PB31, 1000000 baud");
 
-        Serial.print("OSC48M/GCLK0: OK 48000000 Hz");
+        Serial.print("CPU clock: OSC48M/GCLK0 OK 48000000 Hz");
         end_line();
 
         Serial.print("XOSC 24 MHz PA14/PA15: ");
-        print_ok_fail(xosc_ready());
+        print_ok_fail(xosc_active());
         Serial.print(" ready_wait_ms=");
         Serial.print(xosc_elapsed_ms_);
+        Serial.print(" ready=");
+        print_yes_no(xosc_ready());
+        Serial.print(" fail_detected=");
+        print_yes_no(xosc_failed());
         Serial.print(" status=");
         Serial.print(OSCCTRL->STATUS.reg, PrintBase::Hex);
         Serial.print(" gclk1=");
-        print_ok_fail(xosc_generators_configured_);
+        print_enabled_disabled(xosc_generators_configured_);
         Serial.print(" gclk2=");
-        print_ok_fail(xosc_generators_configured_);
+        print_enabled_disabled(xosc_generators_configured_);
         end_line();
 
         if constexpr (test_xosc32k)
         {
             Serial.print("XOSC32K PA00/PA01: ");
-            print_ok_fail(xosc32k_ready());
+            print_ok_fail(xosc32k_active());
             Serial.print(" ready_wait_ms=");
             Serial.print(xosc32k_elapsed_ms_);
+            Serial.print(" ready=");
+            print_yes_no(xosc32k_ready());
+            Serial.print(" fail_detected=");
+            print_yes_no(xosc32k_failed());
             Serial.print(" status=");
             Serial.print(OSC32KCTRL->STATUS.reg, PrintBase::Hex);
             Serial.print(" gclk3=");
-            print_ok_fail(xosc32k_generator_configured_);
+            print_enabled_disabled(xosc32k_generator_configured_);
             end_line();
         }
         else
@@ -198,6 +236,16 @@ private:
     static void print_ok_fail(bool ok)
     {
         Serial.print(ok ? "OK" : "FAIL");
+    }
+
+    static void print_yes_no(bool yes)
+    {
+        Serial.print(yes ? "yes" : "no");
+    }
+
+    static void print_enabled_disabled(bool enabled)
+    {
+        Serial.print(enabled ? "enabled" : "disabled");
     }
 
     static void print_line(const char *text)

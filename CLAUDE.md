@@ -75,10 +75,10 @@ The serial report is printed once after reset:
 ```text
 SAMC21 board bring-up
 UART: SERCOM5 PB30/PB31, 1000000 baud
-OSC48M/GCLK0: OK 48000000 Hz
+CPU clock: OSC48M/GCLK0 OK 48000000 Hz
 XOSC 24 MHz PA14/PA15: OK/FAIL ...
 XOSC32K PA00/PA01: SKIP build_flag=SAM_BOARD_TEST_XOSC32K=0
 ```
 
 When `SAM_BOARD_TEST_XOSC32K=1`, the XOSC32K line reports `OK`/`FAIL`,
-`ready_wait_ms`, status, and `gclk3`.
+`ready_wait_ms`, `ready`, `fail_detected`, status, and `gclk3`.

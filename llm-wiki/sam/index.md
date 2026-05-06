@@ -1,6 +1,6 @@
 # Wiki Index
 
-_Last updated: 2026-05-05 — 38 sources, 81 wiki pages_
+_Last updated: 2026-05-06 — 40 sources, 84 wiki pages_
 
 ## Sources
 
@@ -43,6 +43,8 @@ _Last updated: 2026-05-05 — 38 sources, 81 wiki pages_
 | samc21-datasheet-ch40-ac | SAMC21 Datasheet Ch.40 AC | 2026-05-05 | ac, comparator, analog, samc21, datasheet |
 | samc21-datasheet-ch41-dac | SAMC21 Datasheet Ch.41 DAC | 2026-05-05 | dac, analog, samc21, datasheet |
 | samc21-datasheet-ch43-tsens | SAMC21 Datasheet Ch.43 TSENS | 2026-05-05 | tsens, temperature, analog, samc21, datasheet |
+| samc21-datasheet-ch37-ccl | SAMC21 Datasheet Ch.37 CCL | 2026-05-06 | ccl, logic, lut, samc21, datasheet |
+| samc21-errata | SAMC21 Errata (DS80000748) | 2026-05-06 | errata, silicon, samc21, samc20, workaround |
 
 ## Entities
 
@@ -91,6 +93,7 @@ _Last updated: 2026-05-05 — 38 sources, 81 wiki pages_
 - [[Package Variants]] — E/G/J/N package sizes, port availability per variant, peripheral routing constraints
 - [[FREQM Configuration]] — frequency meter init, formula (VALUE/REFNUM × f_ref), DONE interrupt, overflow handling
 - [[PAC Configuration]] — WRCTRL protect/unprotect sequences, PERID formula and quick-reference table
+- [[CCL Configuration]] — 4 LUTs, TRUTH table computation, INSEL values, AC/TC routing, errata-corrected mapping
 
 ## Analyses
 

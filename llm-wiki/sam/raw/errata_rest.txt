@@ -1,0 +1,988 @@
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.2 CAN Operation Mode
+When CCCR.CME ≠ ""00"" and a change of the CAN operation mode is requested by writing to
+CCCR.CMR while frame transmission/reception is ongoing, this request may be ignored and the M_CAN
+remains in its previous operation mode.
+Scope:
+The errata is limited to the case when a change of the CAN operation mode from/to CAN FD operation is
+requested while frame transmission/reception is ongoing.
+Effects:
+If one of the affected CAN operation mode changes is requested by writing CCCR.CMR while a frame
+transmission/reception is ongoing, the request is acknowledged by resetting CCCR.CMR to ""00"" but the
+M_CAN remains in its previous operation mode.
+Workaround
+No workaround needed in CAN 2.0 networks, CAN Conformance Test passed. No workaround needed
+for switching between CAN operation according to ISO11898-1 and CAN FD operation with bit rate
+switching. In all other cases check whether the requested CAN operation mode change has been
+executed by reading CCCR.FDO and CCCR.FDBS. If not, repeat the command until requested mode
+change is signaled by CCCR.FDO and CCCR.FDBS.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.3 CAN FD Operation
+When a CAN 2.0 frame with a recessive stuff bit following the first reserved bit is received while CAN FD
+operation is enabled and a transmission is pending, the M_CAN will internally overwrites the received
+arbitration bits with the pending transmission’s arbitration bits.
+Scope:
+The erratum is limited to the case when CAN 2.0 frames with specific identifiers causing the described
+stuff bit are received while CAN FD operation is enabled (CCCR.CME ≠ ""00""). The problem does not
+occur when CAN FD operation is disabled.
+Effects:
+If the identifier of a received data frame ends with two dominant bits (11-bit ID) or three dominant bits (29-
+bit ID), there will be a recessive stuff bit after the first reserved bit. This causes the falsification of the
+received arbitration bits if a transmission is pending. If the pending transmission is a remote frame, the
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 9received data frame is treated as a received remote frame which will cause a format or CRC error
+resulting in an error frame. If the pending transmission is a data frame, the incoming frame is received
+and is presented to the receive message handler with the identifier of the pending transmit message.
+Depending on the configuration of the acceptance filtering, the frame may be stored in an Rx Buffer or Rx
+FIFO.
+Workaround
+No workaround needed in CAN 2.0 networks, CAN Conformance Test passed. No workaround needed
+when only CAN FD frames are received. For mixed operation (CAN 2.0 and CAN FD frames) the
+problematic identifiers may not be used.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.4 Classic CAN Operation
+When BTP.TSEG2 and BTP.BRP are zero, and the M_CAN transmits a frame, the FDF bit in CAN FD
+format (reserved bit in Classic CAN format) in the control field may be falsified. The effect is different for
+frames to be transmitted in Classic CAN format and for frames to be transmitted in CAN FD format.
+Transmission of Classic CAN Frame => When BTP.TSEG2 and BTP.BRP are zero and the M_CAN
+transmits a Classic CAN frame (CCCR.CME = ""00"") with a 29-bit identifier where the MSB (ID28) is '1',
+the reserved bit following the RTR bit will be transmitted recessive instead of dominant while the rest of
+the frame is transmitted in Classic CAN format. Transmission of CAN FD Frame => When BTP.TSEG2
+and BTP.BRP are zero, and the M_CAN transmits a CAN FD frame with a 29-bit identifier where the MSB
+(ID28) is ’0’ or a CAN FD frame with 11-bit identifier, the FDF bit of the frame is transmitted dominant
+instead of recessive, the rest of the frame is transmitted in Classic CAN format with a falsified DLC.
+Scope:
+The erratum is limited to the case when in the bit time configuration for Classic CAN operation and the
+Arbitration Phase in CAN FD operation BTP.TSEG2 and BTP.BRP are both zero. This configures the time
+segment after the sample point to the length of one time quantum and the length of the time quantum to
+one clock period. This is an unusual configuration.
+Effects:
+Transmission of Classic CAN Frame => When a Classic CAN frame is received by a CAN FD enabled
+receiving node it will interpret the falsified reserved bit as FDF bit. If this bit is recessive instead of
+dominant, the frame will be interpreted as CAN FD frame. In this case the receiving node will respond
+with an error frame when it detects that the rest of the frame is not in CAN FD format. A strictly Classic
+CAN receiving node will interpret the recessive FDF bit as reserved bit, ignore its actual value and will
+receive this frame correctly without detecting an error. Transmission of CAN FD Frame => When the
+M_CAN wants to transmit a CAN FD frame, it transmits the FDF bit dominant instead of recessive and the
+rest of the frame in Classic CAN format with a falsified DLC.
+Workaround
+Do not use bit timing configurations where BTP.TSEG2 and BTP.BRP are both zero for CAN FD
+communication.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 10Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.5 FDF bit
+When a CAN frame is received with bit FDF and the following res bit both recessive, the protocol
+controller correctly detects a Protocol Exception Event. Reception of the disturbed message is not
+finished, the message is discarded. If this happened, two cases have to be distinguished:
+• Message reception directly after Protocol Exception Event => When the next frame is received
+interrupt flag IR.MRAF is set to ’1’ although the frame has been received correctly.
+• Message transmission directly after Protocol Exception Event => When a frame is transmitted
+directly after a Protocol Exception Event, that frame is transmitted with faulty frame format. In this
+case interrupt flag IR.MRAF is not set. The frame will cause an error frame. Only the first message
+after a Protocol Exception Event is affected, all following messages (received or transmitted) have
+no problem.
+Scope:
+The errata is limited to the case when the reserved bit res after the FDF bit in CAN FD frames is received
+recessive.
+Effects:
+Reception directly after Protocol Exception Event => Interrupt flag IR.MRAF is set although there was no
+problem in accessing the Message RAM. The Message is received correctly. Transmission directly after
+Protocol Exception Event => Transmission of a frame with faulty frame format.
+Workaround
+None.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.6 CAN Mode Change
+When CCCR.CMR is changed during start of transmission, the following may happen:
+• Case 1: Classic CAN -> CAN FD with bit rate switching => When the Tx Event FIFO is used, bits
+EDL and BRS of the related Tx Event FIFO element do not match with the transmitted frame type.
+They signal a CAN FD frame with bit rate switching (both set to one) while a Classic CAN frame
+was transmitted.
+• Case 2: Classic CAN -> CAN FD without bit rate switching => When the Tx Event FIFO is used, bit
+EDL of the related Tx Event FIFO element does not match with the transmitted frame type. It
+signals a CAN FD frame while a Classic CAN frame was transmitted.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 11• Case 3: CAN FD with bit rate switching -> CAN FD without bit rate switching => When the Tx Event
+FIFO is used, bit BRS of the related Tx Event FIFO element does not match with the transmitted
+frame type. It signals a CAN FD frame without bit rate switching while a CAN FD frame with bit rate
+switching was transmitted.
+• Case 4: CAN FD without bit rate switching -> CAN FD with bit rate switching => When the Tx Event
+FIFO is used, bit BRS of the related Tx Event FIFO element does not match with the transmitted
+frame type. It signals a CAN FD frame with bit rate switching while a CAN FD frame without bit rate
+switching was transmitted.
+• Case 5: CAN FD with/without bit rate switching -> Classic CAN => IR.MRAF is set, the M_CAN
+switches to Restricted Operation Mode, and the transmission is aborted.
+Scope:
+The errata is limited to the case when the CAN operation mode is changed during start of transmission.
+Effects:
+Tx Event FIFO element faulty (Cases 1, 2, 3, 4) or interrupt flag IR.MRAF set, Restricted Operation Mode
+entered, and transmission aborted (Case 5).
+Workaround
+Do not change the CAN operation mode by writing to CCCR.CMR as long as there are pending
+transmission requests (TXBRP.TRPnn = '1').
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.7 Restricted Operation Mode
+After detecting a Message RAM Access Failure during frame transmission, interrupt flag IR.MRAF is set
+and the M_CAN enters Restricted Operation Mode (CCCR.ASM = ’1’). When the Restricted Operation
+Mode is left by writing CCCR.ASM = '0', it may happen, that the first frame transmitted is send out with
+unexpected identifier and control field. If this is a valid frame, it may happen that it is accepted and
+acknowledged by a receiver.
+Scope:
+The errata is limited to the case when the M_CAN has entered Restricted Operation Mode due to a
+Message RAM Access Failure, signaled by interrupt flag IR.MRAF.
+Effects:
+With the next transmission after leaving Restricted Operation Mode by resetting CCCR.ASM, a frame with
+unexpected identifier and control field is transmitted which accidentally might be accepted and
+acknowledged by a receiver.
+Workaround
+To recover from Restricted Operation Mode proceed as follows:
+1. Cancel all pending transmission requests by writing 0hFFFF FFFF to register TXBCR.
+2. Issue a clock stop request by setting bit CCCR.CSR.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 123. Wait until the M_CAN sets CCCR.INIT and CCCR.CSA to one.
+4. First reset CCCR.CSR.
+5. Then reset CCCR.INIT.
+6. Wait until CCCR.INIT is read as zero.
+7. Issue a second clock stop request by setting bit CCCR.CSR.
+8. Wait until the M_CAN sets CCCR.INIT and CCCR.CSA to one.
+9. Set CCCR.CCE, reset CCCR.CSR, and reset CCCR.ASM.
+10. Restart M_CAN by writing CCCR.INIT = '0'.
+11. Configure the CAN operation mode by writing to CCCR.CMR.
+12. Request the transmissions canceled by step one.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.8 CCCR.INIT
+When CCCR.INIT is set while the M_CAN is receiving a frame, the next received frame after resetting
+CCCR.INIT will cause IR.MRAF to be set.
+Scope:
+The errata is limited to the case when CCCR.INIT is set/reset while the M_CAN is receiving a frame.
+Effects:
+IR.MRAF is set when the first frame after resetting CCCR.INIT is received although that frame is received
+correctly.
+Workaround
+If CCCR.INIT shall be set during operation proceed as follows:
+1. Issue a clock stop request by setting the CCCR.CSR bit.
+2. Wait until the M_CAN sets CCCR.INIT and CCCR.CSA to one.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.9 Message Transmission in DAR Mode
+When a message is transmitted while CCCR.DAR = ’1’ (automatic re-transmission disabled for messages
+not transmitted successfully), the Event Type of the corresponding Tx Event FIFO element is ET = ""01""
+instead of ET = ""10"".
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 13When multiple messages are transmitted sequentially using the same Tx Buffer while CCCR.DAR = ’1’, it
+may happen that a newly requested transmission is not started when it is requested in the time window
+starting at the successful completion of the previous message and ending at the end of the intermission
+phase before the bus is idle again. This message is then treated as if it had lost arbitration.
+Scope:
+The errata is limited to message transmission when DAR mode is configured. Normal CAN/CAN FD
+operation is not affected
+Effects:
+1. The Event Type of the associated Tx Event FIFO element is not correct.
+2. When a message was transmitted successfully from a specific Tx Buffer, a following transmission
+using the same Tx Buffer and requested in the described time window will not be started.
+Workaround
+Do not use the same Tx Buffer for consecutive DAR transmissions or wait at least for 4 CAN bit times
+after successful transmission before requesting the next transmission from the same Tx Buffer.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.10 Setting CCCR.CCE During a TX Scan
+When CCCR.CCE is set while the M_CAN Tx Handler is scanning the Message RAM for Tx Buffers with
+pending transmission requests (bits TXBRP.TRPnn set), register TXBRP is reset and the Tx Handler FSM
+is halted. After CCCR.INIT and CCCR.CCE have been reset by the Host, the M_CAN is unable to
+transmit messages. When the Host requests a transmission by writing to register TXBAR, the respective
+Tx Buffer Request Pending bit in register TXBRP is set, but the Tx Handler will not start the requested
+transmission.
+Scope:
+The errata is limited to the case when CCCR.CCE is set while the M_CAN Tx Handler is scanning the
+Message RAM.
+Effects:
+When CCCR.CCE is set while a Tx scan is in progress, the Tx Handler FSM stops. After CCCR.INIT and
+CCCR.CCE are reset, the Tx Handler FSM does not execute transmission requests.
+Workaround
+Perform the following steps to workaround the issue:
+1. Cancel all pending transmission requests by writing 0hFFFF FFFF to register TXBCR.
+2. Issue a clock stop request by setting bit CCCR.CSR.
+3. Wait until the M_CAN sets CCCR.INIT and CCCR.CSA to one.
+4. First reset CCCR.CSR.
+5. Then reset CCCR.INIT.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 146. Wait until CCCR.INIT is read as zero.
+7. Issue a second clock stop request by setting bit CCCR.CSR.
+8. Wait until the M_CAN sets CCCR.INIT and CCCR.CSA to one.
+9. Set CCCR.CCE and reset CCCR.CSR.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.11 CAN FD Network Compatibility
+The CAN FD frame format implements Bosch CAN FD Specification V1.0 and is not compatible with
+ISO11898-1. The CCR.NISO bit has no effect.
+Workaround
+Connect only to CAN-FD networks that support Bosch CAN FD Specification V1.0
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.12 On-demand Clock Source
+The CAN is not compatible with an on-demand clock source.
+Workaround
+Clear the ONDEMAND bit to zero for the oscillator source that provides the GCLK to the CAN.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.6.13 Edge Filtering
+When edge filtering is activated (CCCR.EFBI=’1’) and when the end of the integration phase coincides
+with a falling edge at the Rx input pin it may happen, that the CAN synchronizes itself wrongly and does
+not correctly receive the first bit of the frame. In this case the CRC will detect that the first bit was
+received incorrectly, it will rate the received FD frame as faulty and an error frame will be sent.
+The issue only occurs, when there is a falling edge at the Rx input pin (CAN_RX) within the last time
+quantum (tq) before the end of the integration phase. The last time quantum of the integration phase is at
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 15the sample point of the 11th recessive bit of the integration phase. When the edge filtering is enabled, the
+bit timing logic of the CAN sees the Rx input signal delayed by the edge filtering. When the integration
+phase ends, the edge filtering is automatically disabled. This affects the reset of the FD CRC registers at
+the beginning of the frame. The Classical CRC register is not affected, hence this issue does not affect
+the reception of Classical frames.
+In CAN communication, the CAN may enter integrating state (either by resetting the CCCR.INIT or by
+protocol exception event) while a frame is active on the bus. In this case the 11 recessive bits are counted
+between the acknowledge bit and the following start of frame. All nodes have synchronized at the
+beginning of the dominant acknowledge bit. This means that the edge of the following start of frame bit
+cannot fall on the sample point, so the issue does not occur. The issue occurs only when the CAN is, by
+local errors, mis-synchronized with regard to the other nodes.
+Glitch filtering as specified in ISO 11898-1:2015 is fully functional.
+Edge filtering was introduced for applications where the data bit time is at least two tq (of nominal bit
+time) long. In that case, edge filtering requires at least two consecutive dominant time quanta before the
+counter counting the 11 recessive bits for idle detection is restarted. This means edge filtering covers the
+theoretical case of occasional 1-tq-long dominant spikes on the CAN bus that would delay idle detection.
+Repeated dominant spikes on the CAN bus would disturb all CAN communication, so the filtering to
+speed up idle detection would not help network performance.
+When this rare event occurs, the CAN sends an error frame and the sender of the affected frame
+retransmits the frame. When the retransmitted frame is received, the CAN has left integration phase and
+the frame will be received correctly. Edge filtering is only applied during integration phase, it is never used
+during normal operation. As integration phase is very short with respect to ""active communication time"",
+the impact on total error frame rate is negligible. The issue has no impact on data integrity.
+The CAN enters integration phase under the following conditions:
+• When CCCR.INIT is set to ’0’ after start-up
+• After a protocol exception event (only when CCCR.PXHD = ’0’)
+Scope:
+The erratum is limited to FD frame reception when edge filtering is active (CCCR.EFBI=’1’) and when the
+end of the integration phase coincides with a falling edge at the Rx input pin.
+Effects:
+The calculated CRC value does not match the CRC value of the received FD frame and the CAN sends
+an error frame. After retransmission the frame is received correctly.
+Workaround
+Disable edge filtering or wait on retransmission if this rare event happens.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X
+N X
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 161.6.14 Erroneous Transmission
+When NBTP.NTSEG2 is configured to zero (Phase_Seg2(N) = 1), and when there is a pending
+transmission request, a dominant third bit of Intermission may cause the CAN to wrongly transmit the first
+identifier bit dominant instead of recessive, even if this bit was configured as ’1’ in the CAN’s Tx Buffer
+Element.
+A phase buffer segment 2 of length ’1’ (Phase_Seg2(N) = 1) is not sufficient to switch to the first identifier
+bit after the sample point in Intermission where the dominant bit was detected.
+The CAN protocol according to ISO 11898-1 defines that a dominant third bit of Intermission causes a
+pending transmission to be started immediately. The received dominant bit is handled as if the CAN has
+transmitted a Start-of-Frame (SoF) bit.
+The ISO 11898-1 specifies the minimum configuration range for Phase_Seg2(N) to be 2..8 tq. Therefore,
+excluding a Phase_Seg2(N) of ’1’ will not affect CAN conformance.
+Effects:
+If NBTP.NTSEG2 = ’0’, it may happen that the CAN transmits the first identifier bit dominant instead of
+recessive.
+Workaround
+Update configuration range of NBTP.NTSEG2 from 0..127 tq to 1..127 tq in the CAN documentation.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.7 Configurable Custom Logic (CCL)
+1.7.1 RS Latch Reset
+The reset of the RS latch is not functional. The latch can only be cleared by disabling the LUT.
+Workaround
+None.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 171.8 Device
+1.8.1 Idle Sleep Mode
+In Idle Sleep mode, the APB and AHB clocks are not stopped if the FDPLL is running as a GCLK clock
+source.
+Workaround
+Disable the FDPLL before entering Idle Sleep mode.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.8.2 Clock Configuration
+The Analog Comparators and ADC1 use the same generic clock configuration. GCLK_ADC1 must be
+used to configure the clock for AC as GCLK_AC is not functional.
+Workaround
+None.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.8.3 TC Selection
+The default TC selection as CCL input is not TC0, but TC4. Thus the TC selection for the CCL is
+TC4/TC0/TC1/TC2 instead of TC0/TC1/TC2/TC3. The TC alternate selection is TC0/TC1/TC2/TC3
+instead of TC1/TC2/TC3/TC4.
+Workaround
+Use the TC input mapping described above.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 181.8.4 CTRLB Register Writes
+In I2C Slave mode, writing the CTRLB register when in the AMATCH or DRDY Interrupt Service Routines
+can cause the state machine to reset.
+Workaround
+Write CTRLB.ACKACT to 0 using the following sequence:
+ // If higher priority interrupts exist, then disable so that the following two writes are 
+atomic.
+SERCOM - STATUS.reg = 0;
+SERCOM - CTRLB.reg = 0;
+ // Re-enable interrupts if applicable.
+Write CTRLB.ACKACT to 1 using the following sequence:
+SERCOM - CTRLB.reg = SERCOM_I2CS_CTRLB_ACKACT;
+Otherwise, only write to CTRLB in the AMATCH or DRDY interrupts if it is to close out a transaction.
+When not closing a transaction, clear the AMATCH interrupt by writing a 1 to its bit position instead of
+using CTRLB.CMD. The DRDY interrupt is automatically cleared by reading/writing to the DATA register
+in smart mode. If not in smart mode, DRDY should be cleared by writing a 1 to its bit position.
+Code replacements examples:
+Current:
+SERCOM - CTRLB.reg |= SERCOM_I2CS_CTRLB_ACKACT; 
+Change to:
+SERCOM - STATUS.reg = 0; 
+ SERCOM - CTRLB.reg = SERCOM_I2CS_CTRLB_ACKACT;
+SERCOM - CTRLB.reg &= ~SERCOM_I2CS_CTRLB_ACKACT; 
+ SERCOM - CTRLB.reg = 0; 
+ /* ACK or NACK address */ 
+ SERCOM - CTRLB.reg |= SERCOM_I2CS_CTRLB_CMD(0x3);
+ // CMD=0x3 clears all interrupts, so to keep the result similar,
+ // PREC is cleared if it was set.
+ if (SERCOM - INTFLAG.bit.PREC) SERCOM - INTFLAG.reg = SERCOM_I2CS_INTFLAG_PREC;
+SERCOM - INTFLAG.reg = SERCOM_I2CS_INTFLAG_AMATCH;
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.8.5 Increased Power Consumption
+Increased power consumption in Standby Sleep mode.
+Workaround
+None.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 19Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.8.6 SYSTICK Calibration Value
+The SYSTICK calibration value is incorrect.
+Workaround
+The correct SYSTICK calibration value is 0x40000000. This value should not be used to initialize the
+Systick RELOAD value register, which should be initialized instead with a value depending on the main
+clock frequency and on the tick period required by the application. For a detailed description of the
+SYSTICK module, refer to the official ARM Cortex-M0+ documentation.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.8.7 DMA Write Access
+DMA write access in Standby mode (i.e., during SleepWalking) may not work on some registers. The
+impacted peripheral registers for SAM C20/C21 "E/G/J" devices are:
+• ADC: SWTRIG
+• RTC: COUNT
+• TC: CTRLB, STATUS, COUNTH, COUNTL, PER, PERBUF, CC, CCBUF
+• TCC: CTRLB, STATUS, COUNT, PATT, WAVE, PER, PERBUF, CC, CCBUF
+• SDADC: SWTRIG
+The impacted peripheral registers for SAM C20/C21 "N" devices are:
+• RTC: COUNT
+• SDADC: SWTRIG
+Workaround
+Use Idle Sleep mode when using DMA write access (SleepWalking) to the impacted registers.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 201.8.8 PC10 Pin
+Driving PC10 to logic HIGH affects VDDCORE.
+Workaround
+Do not use the pin PC10. Keep the default configuration for the pin. Connect externally the PC10 pin to
+GND.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J
+N X
+1.8.9 DAC Output
+When using DAC Output as Positive MUX Input Selection for the ADC, starting an ADC conversion
+results in noise on the DAC Output voltage and noisy ADC reading.
+Workaround
+Wire the DAC VOUT pin externally to a ADC AINx pin input. Select the corresponding ADC AINx pin as
+Positive MUX Input Selection.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.8.10 DAC Output Reference Selection
+When using DAC Output as the Reference Selection for the SDADC, starting a SDADC conversion
+results in noise on the DAC Output voltage.
+Workaround
+Set the SDADC Reference Buffer On by writing REFCTRL.ONREFBUF = 1.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.8.11 VREGSMOD bits
+VREGSMOD bits have no effect in the PM.STDBYCFG register. The power domain controller always
+operates in Automatic Regulator mode.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 21Workaround
+None.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.8.12 OSC48M Accuracy
+The OSC48M accuracy cannot be reached for the whole VDD range.
+Workaround
+SAM C20/C21 "E/G/J" - Revision B Silicon: None.
+SAM C20/C21 "E/G/J" - Revision C Silicon: Limited VDD range, according to the Electrical Characteristics
+chapter
+SAM C20/C21 "E/G/J" - Revision D and E Silicon: Write OSCCTRL.CAL48M register, depending on the
+VDD range used.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N
+1.9 Digital-to-Analog Converter (DAC)
+1.9.1 Dithering Mode
+DAC in Dithering mode with right-adjust data leads to INL of 16 LSBs.
+Workaround
+Use dithering with left-adjusted data only.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.9.2 Standby Sleep Mode
+When DAC.CTRLA.RUNSTDBY = 0 and DATABUF is written (not empty), if the device goes to Standby
+Sleep mode before a Start Conversion event, DAC.INTFLAG.EMPTY will be set after exit from Sleep
+mode.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 22Workaround
+After waking from Standby mode, ignore and clear the flag DAC.INTFLAG.EMPTY.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.10 Direct Memory Access Controller (DMAC)
+1.10.1 CRCDATAIN Writes
+If data is written to CRCDATAIN in two consecutive instructions, the CRC computation may be incorrect.
+Workaround
+Add a NOP instruction between each write to CRCDATAIN register.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.10.2 Fetch Error
+When using more than one DMA channel and if one of these DMA channels has a linked descriptor, a
+fetch error can appear on this channel.
+Workaround
+Do not use linked descriptors, make a software link instead:
+Replace the channel which used linked descriptor by two channels DMA (with linked descriptor disabled)
+handled by two channels event system:
+• DMA channel 0 transfer completion is able to send a conditional event for DMA channel 1 (through
+event system with configuration of BTCTRL.EVOSEL=BLOCK for channel 0 and configuration
+CHCTRLB.EVACT=CBLOCK for channel 1)
+• On the transfer complete reception of the DMA channel 0, immediately re-enable the channel 0
+• Then DMA channel 1 transfer completion is able to send a conditional event for DMA channel 0
+(through event system with configuration of BTCTRL.EVOSEL=BLOCK for channel 1 and
+configuration CHCTRLB.EVACT=CBLOCK for channel 0)
+• On the transfer complete reception of the DMA channel 1, immediately re-enable the channel 1
+• The mechanism can be launched by sending a software event on the DMA channel 0
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 23Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X
+N X
+1.10.3 Enabling Channels
+When at least one channel using linked descriptors is already active, enabling another DMA channel (with
+or without linked descriptors) can result in a channel Fetch Error (FERR) or an incorrect descriptor fetch.
+This happens if the channel number of the channel being enabled is lower than the channel already
+active.
+Workaround
+When enabling a DMA channel while other channels using linked descriptors are already active, the
+channel number of the new channel enabled must be greater than the other channel numbers.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X
+N X
+1.11 External Interrupt Controller (EIC)
+1.11.1 NMI Exception
+If the NMI pin PORT config is INPUT+PULL-UP enabled and the NMI is configured to trigger on rising
+edge (or both edges), the NMI exception is triggered as soon as the NMI config is written.
+Workaround
+Set the NMI pin PORT config, enable EIC in Edge Detection mode, and then disable the EIC. Clear
+INTFLAG, and then write the NMI configuration.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.11.2 Write-protection
+The EIC ASYNCH register is not write-protected.
+Workaround
+None.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 24Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.11.3 Spurious Flag
+When the EIC is configured to generate an interrupt on a low level or rising edge or both edges
+(CONFIGn.SENSEx) with the filter enabled (CONFIGn.FILTENx), a spurious flag might appear for the
+dedicated pin on the INTFLAG.EXTINT[x] register as soon as the EIC is enabled using CTRLA ENABLE
+bit.
+Workaround
+Clear the INTFLAG bit once the EIC enabled and before enabling the interrupts.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N
+1.11.4 False NMI Interrupt
+Changing the NMI configuration (CONFIGn.SENSEx) on-the-fly may lead to a false NMI interrupt.
+Workaround
+Clear the NMIFLAG bit once the NMI has been modified.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N
+1.11.5 Edge Detection
+When enabling EIC, SYNCBUSY.ENABLE is released before EIC is fully enabled. Edge detection can be
+done only after three cycles of the selected GCLK (GCLK_EIC or CLK_ULP32K).
+Workaround
+None.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 25Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J
+N X
+1.11.6 Edge Detection
+When the asynchronous edge detection is enabled, and the system is in Standby mode, only the first
+edge will be detected. The following edges are ignored until the system wakes up.
+Workaround for SAM C20/C21 "E/G/J" Devices
+Asynchronous edge detection doesn’t work, instead use the synchronous edge detection
+(ASYNCH.ASYNCH[x]=0). To reduce power consumption when using synchronous edge detection, either
+set the GCLK_EIC frequency as low as possible or select the ULP32K clock (EIC CTRLA.CKSEL=1).
+Workaround for SAM C20/C21 "N" Devices
+Use the asynchronous edge detection with debouncer enabled. It is recommended to have the
+DPRESCALER.PRESCALER and DPRESCALER.TICKON settings such as to have the lowest frequency
+possible. To reduce the power consumption, set the EIC GCLK frequency as low as possible or select the
+ULP32K clock (EIC CTRLA.CKSEL set).
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.12 Event System (EVSYS)
+1.12.1 Generic Clock
+Using synchronous, spurious overrun can appear with generic clock for the channel always on.
+Workaround
+Request the generic clock on demand by setting the CHANNEL.ONDEMAND bit to one.
+No penalty is introduced.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 261.12.2 Overrun Flag Trigger
+The acknowledge between an event user and the EVSYS clears the CHSTATUS.CHBUSYn bit before
+this information is fully propagated in the EVSYS one GCLK_EVSYS_CHANNEL_n clock cycle later. As a
+consequence, any generator event occurring on that channel before that extra
+GCLK_EVSYS_CHANNEL_n clock cycle will trigger the overrun flag.
+Workaround
+For applications using event generators other than the software event, monitor the OVR flag.
+For applications using the software event generator, wait one GCLK_EVSYS_CHANNEL_n clock cycle
+after the CHSTATUS.CHBUSYn bit is cleared before issuing a software event.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N
+1.13 I/O Pin Controller (PORT)
+1.13.1 Overrun Events
+When the PORT is defined as EVSYS.USER in a synch/resynch path, the first event is transmitted to the
+PORT but the acknowledgment coming from the PORT is not released. So next coming events are
+treated as overrun by EVSYS.
+Workaround
+None.
+Do not use the synch/resynch path, only use asynchronous path.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.13.2 PORT Read and Write
+PORT read/write attempts on non-implemented registers, including addresses beyond the last
+implemented register group (PA, PB,...) do not generate a PAC protection error.
+Workaround
+None.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 27Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.14 Non-Volatile Memory Controller (NVMCTRL)
+1.14.1 EEPROM Cache
+The RWW EEPROM cache is not invalidated when performing write or erase operations. Reading
+RWWEE cached data can result in outdated data.
+Workaround
+When the RWW EEPROM Cache is on CTRLB.CACHEDIS=0x2 or CTRLB.CACHEDIS=0x3, invalidate
+the cache by issuing the INVALL NVMCTRL command immediately after issuing a RWW EEPROM write
+or erase operation.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.15 Peripheral Touch Controller (PTC)
+1.15.1 Excess Power Consumption
+The PTC generic clock is always requested during Standby mode when RUNSTDBY is set to one. Power
+consumption will be higher if the PTC is enabled during Standby Sleep mode even if no conversion is
+ongoing.
+Workaround
+Disable PTC in Standby mode to reduce power consumption.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 281.16 Real-Time Clock (RTC)
+1.16.1 Read Synchronization
+The COUNTSYNC/CLOCKSYNC bit of the RTC.CTRLA register has no effect. Read synchronization of
+the COUNT/CLOCK register is always enabled.
+Workaround
+None.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.17 Serial Communication Interface (SERCOM)
+1.17.1 SPI Mode
+If the SERCOM is enabled in SPI mode with SSL detection enabled (CTRLB.SSDE) and CTRLB.RXEN =
+1, an erroneous slave select low interrupt (INTFLAG.SSL) can be generated.
+Workaround
+Enable the SERCOM first with CTRLB.RXEN = 0. In a subsequent write, set CTRLB.RXEN = 1.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.17.2 Auto-baud Mode
+In USART Auto-baud mode, missing Stop bits are not recognized as inconsistent sync (ISF) or framing
+(FERR) errors.
+Workaround
+None.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 291.18 Sigma-Delta Analog-to-Digital Converter (SDADC)
+1.18.1 Input Conversion
+If the APB clock is not 2x or higher than the Generic Clock frequency, the first input conversion in a
+sequence will be invalid.
+Workaround
+The APB clock must be twice the generic clock frequency or higher, or the prescaler must be configured
+to provide a similar ratio.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.18.2 INL
+Poor INL is observed when the SDADC input signal is close to VREF.
+Workaround
+SDADC Differential Input Voltage Range should be limited to ± 0.7.VREF (and not ± VREF).
+SDADC Single-Ended Input Voltage Range should be limited to 0 to 0.7.VREF (and not 0 to VREF).
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N
+1.18.3 Conversions
+The default value of zero in GAINCORR causes RESULT to be zero. The default value of zero in
+CTRLB.SKPCNT generates invalid data on the first two conversions
+Workaround
+Write GAINCORR to '1' before running any conversions. Write CTRLB.SKPCNT to 2 before running
+single conversions.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 301.19 Temperature Sensor (TSENS)
+1.19.1 PAC Write-protection
+When PAC Write-Protection is enabled for TSENS, writes to TSENS.CTRLB are not functional.
+Workaround
+Do not enable the PAC Write-Protection for TSENS.CTRLB or use the TSENS in free-running mode.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.20 Timer/Counter (TC)
+1.20.1 Capture Overflow
+A capture overflow can occur without INTFLAG.ERR being set if a new capture occurs within 3 APB clock
+periods + 3 generic clock periods after a previous capture.
+Workaround
+The delay between two capture events must be longer than 3 APB clock periods + 3 generic clock
+periods.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.20.2 I/O Pins
+The input capture on I/O pins does not work.
+Workaround
+Use the input capture through TC event and use the EIC or CCL as event generators.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 311.20.3 SYNCBUSY Flag
+When clearing the STATUS.PERBUFV/STATUS.CCBUFx flag, SYNCBUSY flag is released before the
+PERBUF/CCBUFx register is restored to its appropriate value.
+Workaround
+Clear successively twice the STATUS.PERBUFV/STATUS.CCBUFx flag to ensure that the PERBUF/
+CCBUFx register value is properly restored before updating it.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.21 Timer/Counter for Control Applications (TCC)
+1.21.1 Circular Buffer
+When the circular buffer is enabled, an APB clock is requested to update the corresponding APB register.
+If all masters in the system (CPU, DMA) are disabled, the APB clock is never provided to the TCC,
+making the circular buffer feature not functional in standby Sleep mode.
+Workaround
+Keep a master enabled in the system (enable DMA or do not enable standby Sleep mode when circular
+buffer is enabled).
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.21.2 RAMP 2 Mode
+In RAMP 2 mode with Fault keep, qualified and restart, if a fault occurred at the end of the period during
+the qualified state, the switch to the next ramp can have two restarts.
+Workaround
+Avoid faults few cycles before the end or the beginning of a ramp.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 321.21.3 CAPTMARK
+FCTRLX.CAPTURE[CAPTMARK] does not work as described in the data sheet. CAPTMARK cannot be
+used to identify captured values triggered by fault inputs source A or B on the same channel.
+Workaround
+Use two different channels to timestamp FaultA and FaultB.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.21.4 Capture Overflow
+A capture overflow can occur without INTFLAG.ERR being set if a new capture occurs within 3 APB
+clocks + 3 generic Clock periods from a previous capture.
+Workaround
+The delay between two capture events must be longer than 3 APB clock periods + 3 generic clock
+periods.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.21.5 Advance Capture Mode
+Advance Capture mode (CAPTMIN CAPTMAX LOCMIN LOCMAX DERIV0) doesn’t work if an upper
+channel is not in one of these mode. Example: when CC[0] = CAPTMIN, CC[1] = CAPTMAX, CC[2] =
+CAPTEN, and CC[3] = CAPTEN, CAPTMIN and CAPTMAX will not work.
+Workaround
+Basic capture mode must be set in lower channel and advance capture mode in upper channel.
+Example: CC[0] = CAPTEN , CC[1] = CAPTEN , CC[2] = CAPTMIN, CC[3] = CAPTMAX.
+All capture will be done as expected.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 331.21.6 SYNCBUSY
+When clearing STATUS.xxBUFV flag, SYNCBUSY is released before the register is restored to its
+appropriate value.
+Workaround
+To ensure that the register value is properly restored before updating this same register through xx or
+xxBUF with a new value, the STATUS.xxBUFV flag must be cleared successively two times.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N
+1.21.7 Dithering Mode
+Using TCC in Dithering mode with external retrigger events can lead to unexpected stretch of right-
+aligned pulses, or shrink of left-aligned pulses.
+Workaround
+Do not use retrigger events or actions when TCC is configured in Dithering mode.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 342. Data Sheet Clarifications
+The following typographic corrections and clarifications are to be noted for the latest version of the device
+data sheet (DS60001479B):
+Note:  Corrections in tables, registers, and text are shown in bold. Where possible, the original bold text
+formatting has been removed for clarity.
+No clarifications to report at this time.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 35

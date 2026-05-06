@@ -4,13 +4,34 @@ type: concept
 tags: [tc, timer, counter, pwm, firmware, samc21]
 sources: [application-bring-up, samc21-datasheet-ch35-tc]
 created: 2026-05-05
-updated: 2026-05-05
+updated: 2026-05-06
 ---
 
 # TC 32-Bit Paired Mode
 
 How to configure and use TC instances on the SAMC21 — covering all three modes
 (8-bit, 16-bit, 32-bit paired) with register-level reference.
+
+## Datasheet Errata — DS60001479D §35.6.2.4
+
+> **"TC2 does not support 32-bit resolution."** ← **FALSO / REFUSO**
+
+Il datasheet DS60001479D (pagina 704, sezione 35.6.2.4 "Counter Mode") afferma
+esplicitamente che TC2 non supporta la modalità 32-bit. Questa affermazione è
+stata **smentita da un esperimento hardware** eseguito il 2026-05-06 su
+ATSAMC21J18A-AU:
+
+- `TC2_MASTER = 1` e `TC3_MASTER = 0` negli header Atmel ufficiali: la gerarchia
+  è identica a TC0/TC1.
+- Gli header definiscono `REG_TC2_COUNT32_*` per tutti i registri COUNT32.
+- Con TC2 configurato in `MODE_COUNT32` (master) e TC3 lasciato intoccato (slave
+  automatico): `TC3.STATUS.SLAVE = 1` (pairing confermato dall'hardware) e
+  counter TC2 = **74971** dopo 1,6 s (> 65535 = max 16-bit), dimostrando il
+  funzionamento in modalità 32-bit.
+
+La coppia TC2+TC3 si comporta esattamente come TC0+TC1. Il refuso riguarda
+probabilmente una revisione precedente del silicon o una copia-incolla errata
+tra sezioni del datasheet.
 
 ## Pairing for 32-bit Mode
 

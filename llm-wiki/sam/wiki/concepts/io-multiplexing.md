@@ -85,12 +85,16 @@ PB12, PB13, PB16, PB17, PB30, PB31
 
 ## TC/TCC Output Pin Examples
 
-| Pin | Function E | Function F |
-|-----|-----------|-----------|
-| PA08 | TC0/WO[0] | TCC0/WO[0] |
-| PA09 | TC0/WO[1] | TCC0/WO[1] |
-| PA10 | TC1/WO[0] | TCC1/WO[0] |
-| PA11 | TC1/WO[1] | TCC1/WO[1] |
+Verified against CMSIS pio header `samc21j18a.h`. WO[0..1] use mux E; WO[2..7] use mux F.
+
+| Pin | Function E (PMUX=4) | Function F (PMUX=5) |
+|-----|---------------------|---------------------|
+| PA04 | TCC0/WO[0] | — |
+| PA05 | TCC0/WO[1] | — |
+| PA08 | TCC0/WO[0] | — |
+| PA09 | TCC0/WO[1] | — |
+| PA10 | TC1/WO[0] | TCC0/WO[2] |
+| PA11 | TC1/WO[1] | TCC0/WO[3] |
 | PA22 | TC3/WO[0] | TCC0/WO[4] |
 | PA23 | TC3/WO[1] | TCC0/WO[5] |
 | PB30 | TCC0/WO[0] | TCC1/WO[2] |

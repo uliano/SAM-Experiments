@@ -1,0 +1,266 @@
+ SAM C20/C21
+ SAM C20/C21 Family Silicon Errata and Data Sheet
+Clarification
+SAM C20/C21 Family
+The SAM C20/C21 family of devices that you have received conform functionally to the current Device
+Data Sheet (DS60001479B), except for the anomalies described in this document.
+The silicon issues discussed in the following pages are for silicon revisions with the Device and Revision
+IDs listed in Table 1. SAM C20 Family Silicon Device Identification and Table 2. SAM C21 Family Silicon
+Device Identification.
+The errata described in this document will be addressed in future revisions of the SAM C20/C21 family
+silicon.
+Note:  This document summarizes all silicon errata issues from all revisions of silicon, previous as well
+as current.
+Data Sheet clarifications and corrections (if applicable) are located in Data Sheet Clarifications, following
+the discussion of silicon issues.
+Table 1. SAM C20 Family Silicon Device Identification
+Part Number Device ID (DID[31:0])
+Revision (DID.REVISION[3:0])
+A B C D E
+ATSAMC20E15A 0x1100xx0D
+0x0 0x1 0x2 0x3 0x4
+ATSAMC20E16A 0x1100xx0C
+ATSAMC20E17A 0x1100xx0B
+ATSAMC20E18A 0x1100xx0A
+ATSAMC20G15A 0x1100xx08
+ATSAMC20G16A 0x1100xx07
+ATSAMC20G17A 0x1100xx06
+ATSAMC20G18A 0x1100xx05
+ATSAMC20J15A 0x1100xx03
+ATSAMC20J16A 0x1100xx02
+ATSAMC20J17A 0x1100xx01
+ATSAMC20J18A 0x1100xx00
+ATSAMC20N17A 0x1100xx21
+0x0 N/A N/A N/A N/A
+ATSAMC20N18A 0x1100xx20
+© 2017 Microchip Technology Inc.  DS80000740B-page 1Table 2. SAM C21 Family Silicon Device Identification
+Part Number Device ID (DID[31:0])
+Revision (DID.REVISION[3:0])
+A B C D E
+ATSAMC21E15A 0x1101xx0D
+0x0 0x1 0x2 0x3 0x4
+ATSAMC21E16A 0x1101xx0C
+ATSAMC21E17A 0x1101xx0B
+ATSAMC21E18A 0x1101xx0A
+ATSAMC21G15A 0x1101xx08
+ATSAMC21G16A 0x1101xx07
+ATSAMC21G17A 0x1101xx06
+ATSAMC21G18A 0x1101xx05
+ATSAMC21J15A 0x1101xx03
+ATSAMC21J16A 0x1101xx02
+ATSAMC21J17A 0x1101xx01
+ATSAMC21J18A 0x1101xx00
+ATSAMC21N17A 0x1101xx21
+0x0 N/A N/A N/A N/A
+ATSAMC21N18A 0x1101xx20
+Note:  Refer to the “Device Service Unit” chapter in the current Device Data Sheet (DS60001479B) for
+detailed information on Device Identification and Revision IDs for your specific device.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 2Table of Contents
+SAM C20/C21 Family......................................................................................................1
+1. SAM C20/C21 Errata Issues..................................................................................... 4
+1.1. 32 kHz Oscillators Controller (OSC32KCTRL).............................................................................4
+1.2. 48 MHz High-Accuracy Internal Oscillator (OSC48M)................................................................. 4
+1.3. 96 MHz Fractional Digital Phase-Locked Loop (FDPLL)..............................................................4
+1.4. Analog-to-Digital Converter (ADC)...............................................................................................5
+1.5. Analog Comparators (AC)............................................................................................................7
+1.6. Controller Area Network (CAN)....................................................................................................8
+1.7. Configurable Custom Logic (CCL)............................................................................................. 17
+1.8. Device........................................................................................................................................ 18
+1.9. Digital-to-Analog Converter (DAC).............................................................................................22
+1.10. Direct Memory Access Controller (DMAC).................................................................................23
+1.11. External Interrupt Controller (EIC)..............................................................................................24
+1.12. Event System (EVSYS)..............................................................................................................26
+1.13. I/O Pin Controller (PORT).......................................................................................................... 27
+1.14. Non-Volatile Memory Controller (NVMCTRL).............................................................................28
+1.15. Peripheral Touch Controller (PTC)............................................................................................. 28
+1.16. Real-Time Clock (RTC).............................................................................................................. 29
+1.17. Serial Communication Interface (SERCOM)..............................................................................29
+1.18. Sigma-Delta Analog-to-Digital Converter (SDADC)................................................................... 30
+1.19. Temperature Sensor (TSENS)................................................................................................... 31
+1.20. Timer/Counter (TC).................................................................................................................... 31
+1.21. Timer/Counter for Control Applications (TCC)............................................................................32
+2. Data Sheet Clarifications......................................................................................... 35
+3. Appendix A: Revision History.................................................................................. 36
+The Microchip Web Site................................................................................................ 37
+Customer Change Notification Service..........................................................................37
+Customer Support......................................................................................................... 37
+Microchip Devices Code Protection Feature................................................................. 37
+Legal Notice...................................................................................................................38
+Trademarks................................................................................................................... 38
+Quality Management System Certified by DNV.............................................................39
+Worldwide Sales and Service........................................................................................40
+© 2017 Microchip Technology Inc.  DS80000740B-page 31. SAM C20/C21 Errata Issues
+The following issues apply to the SAM C20/C21 Family devices.
+1.1 32 kHz Oscillators Controller (OSC32KCTRL)
+1.1.1 Clock Failure Detection
+At start-up and in case of clock failure detection (CFD), the auto switch by the CFD does not work if
+XOSC32K is requested by the GCLK.
+Workaround
+Manually change the clock from XOSC32K to another 32K source.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.2 48 MHz High-Accuracy Internal Oscillator (OSC48M)
+1.2.1 System Reset
+When a System Reset is applied, the OSC48MDIV register is reset, but the value is not synchronized.
+This may result in the system clock running too fast.
+Workaround
+Do not write the OSC48MDIV register to lower than 0xB.
+Do not run the device faster than 4 MHz when running from internal oscillators
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.3 96 MHz Fractional Digital Phase-Locked Loop (FDPLL)
+1.3.1 Standby Mode
+When entering Standby mode, the FDPLL is still running even if not requested by any module causing
+extra consumption.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 4Workaround
+The FDPLL must be disabled before entering in Standby mode and re-enabled after wake-up
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.3.2 Clocking Accuracy
+The FDPLL96M exhibits high period jitter and is not suitable for accurate clocking. Accurate clocking is
+limited to 32 MHz and below through XOSC.
+Workaround
+Connect a XTAL of up to 32 MHz to XOSC for a high-speed accurate clock source. OSC48M may be
+used for frequencies up to 48 MHz when less accuracy is required.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X
+N
+1.3.3 Ratio Value
+When FDPLL ratio value in the DPLLRATIO register is changed on the fly, STATUS.DPLLLDRTO will not
+be set even though the ratio is updated.
+Workaround
+Monitor the INTFLAG.DPLLLDRTO instead of STATUS.DPLLLDRTO to get the status for the DPLLRATIO
+register update.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.4 Analog-to-Digital Converter (ADC)
+1.4.1 Software Trigger
+Once set, the ADC.SWTRIG.START will not be cleared until the microcontroller is reset.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 5Workaround
+None.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.4.2 Least Significant Byte Result
+The LSB of ADC result is stuck at zero, in unipolar mode for 8-bit and 10-bit resolution.
+Workaround
+Use 12-bit resolution and take only least 8 bits or 10 bits, if necessary.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.4.3 Window Monitor
+When the window monitor is enabled and its output is '0', the ADC GCLK is kept running. Power
+consumption will be higher than expected in Sleep mode.
+Workaround
+None.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.4.4 Synchronized Event
+If a synchronized event is received during an ADC conversion, the ADC will not acknowledge the event,
+causing a stall of the event channel.
+Workaround
+When using events with the ADC, only the asynchronous path from the Event System must be used.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 6Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N
+1.4.5 Software Trigger Sync Busy Status
+ADC SYNCBUSY.SWTRIG becomes stuck to one after wake-up from Standby Sleep mode.
+Workaround
+Ignore ADC SYNCBUSY.SWTRIG status when waking up from Standby Sleep mode. The ADC result can
+be read after INTFLAG.RESRDY is set. To start the next conversion, write a ‘1’ to SWTRIG.START.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.5 Analog Comparators (AC)
+1.5.1 Hysteresis
+Hysteresis is only present for a falling (1->0) transition of the comparator output.
+Workaround
+None.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X
+N
+1.5.2 Low-Power Mode with Hysteresis
+Low-Power mode (COMPCTRLn.SPEED = 0x0) with Hysteresis enabled (COMPCTRLn.HYSTEN = 0x1)
+may result in undesired behavior of the AC.
+Workaround
+Do not use AC Low-Power mode (COMPCTRLn.SPEED = 0x0) and hysteresis (COMPCTRLn.HYSTEN
+= 0x1) together. Use only one of these features to avoid incorrect AC behavior.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 7Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.5.3 Analog Pins
+Analog pins are shared between PTC and AC module. This may result in PTC accuracy issues.
+Workaround
+To guarantee the accuracy of the PTC measurement when using these shared pins, configure the AC
+input to anything different from default configuration, that is, VDD scaler, DAC or Bandgap.
+Affected Silicon Revisions
+C20/C21
+Device
+A B C D E
+E/G/J X X X X
+N X
+1.6 Controller Area Network (CAN)
+1.6.1 CAN 2.0 Frame Transmit
+When a CAN 2.0 frame is transmitted while CAN FD operation is enabled, a recessive stuff bit following
+the first reserved bit will cause a shift in the DLC for specific identifiers with the result, that a frame with
+faulty DLC and faulty number of data bytes is transmitted.
+Scope:
+The erratum is limited to the case when a CAN 2.0 frame is transmitted while CAN FD operation is
+enabled (CCCR.CME ≠ ""00""). The problem does not occur when CAN FD frames are transmitted or
+when CAN FD operation is disabled.
+Effects:
+If the identifier of a transmit message ends with two dominant bits (11-bit ID) or three dominant bits (29-bit
+ID), bit stuffing causes the DLC to be shifted by one bit to the right. This results in transmission of a
+message with faulty DLC and therefore faulty number of data bytes.
+Workaround
+No workaround needed in CAN 2.0 networks, CAN Conformance Test passed. No workaround needed
+when only CAN FD messages are transmitted. For mixed operation (CAN 2.0 and CAN FD frames) the
+problematic identifiers may not be used for the transmission of CAN 2.0 frames.
+ SAM C20/C21
+© 2017 Microchip Technology Inc.  DS80000740B-page 8

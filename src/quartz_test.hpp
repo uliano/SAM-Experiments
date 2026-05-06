@@ -59,7 +59,10 @@ private:
     static void start_xosc_24mhz(void)
     {
         OSCCTRL->XOSCCTRL.reg = 0u;
-        OSCCTRL->CFDPRESC.reg = OSCCTRL_CFDPRESC_CFDPRESC(0);
+        // CFDPRESC=1 → safe clock = OSC48M/2 = 24 MHz = XOSC freq.
+        // With CFDPRESC=0 the detection window is 1 OSC48M cycle (20.8 ns),
+        // shorter than one XOSC period (41.7 ns), so the CFD fires spuriously.
+        OSCCTRL->CFDPRESC.reg = OSCCTRL_CFDPRESC_CFDPRESC(1);
         OSCCTRL->INTFLAG.reg =
             OSCCTRL_INTFLAG_XOSCRDY |
             OSCCTRL_INTFLAG_XOSCFAIL;

@@ -2,7 +2,7 @@
 #include "quartz_test.hpp"
 #include "serial.hpp"
 #include "timebase.hpp"
-#include "tc_test.hpp"
+#include "ccl_wo_test.hpp"
 
 int main(void)
 {
@@ -13,7 +13,7 @@ int main(void)
     QuartzTest::init();
     QuartzTest::report_once();
 
-    TcTest::run();
+    CclWoTest::run();
 
     for (;;)
         __WFI();

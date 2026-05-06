@@ -39,6 +39,12 @@ Both master and slave require APB clocks enabled. Only the master needs a GCLK.
 All COUNT32 registers are accessed through the master TC instance. STATUS.SLAVE is
 set on the slave when its master is configured for COUNT32.
 
+> **ERRATA §35.6.2.4** — Il testo del datasheet DS60001479D (p. 704) afferma
+> *"TC2 does not support 32-bit resolution."* Questa affermazione è **errata**.
+> Un esperimento hardware (2026-05-06, ATSAMC21J18A-AU) ha dimostrato che TC2
+> funziona correttamente in COUNT32 mode con TC3 come slave (`STATUS.SLAVE=1`,
+> counter = 74971 dopo 1,6 s). Vedi [[TC 32-Bit Paired Mode]] per i dettagli.
+
 ## Waveform Generation (WAVE.WAVEGEN)
 
 | Value | Name | TOP | WO on match | WO on wraparound |

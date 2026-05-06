@@ -1,5 +1,151 @@
 # Wiki Log
 
+## [2026-05-06] experiment | LUT2/TCC2 INSEL1+INSEL2 confirmed — mapping 100% complete
+
+- LUT2 INSEL1=TCC → 75% (WO[1]) ✓; INSEL2=TCC → 25% (WO[2]=WO[0], 2 CC only) ✓.
+- All 4 LUTs, all 3 INSEL slots now exhaustively verified by scope.
+- Pages updated: [[CCL Configuration]]
+
+## [2026-05-06] experiment | LUT3 all 3 INSEL slots confirmed (TCC0 wraparound)
+
+- LUT3 INSEL1=TCC → 75% (WO[1]) ✓; INSEL2=TCC → 50% (WO[2]) ✓.
+- LUT3 behaves identically to LUT0: TCC0, INSEL_n→WO[n].
+- Full INSEL=TCC mapping on SAMC21J18A now exhaustively verified by scope.
+- Pages updated: [[CCL Configuration]]
+
+## [2026-05-06] experiment | LUT3 wraparound confirmed — complete INSEL=TCC mapping established
+
+- LUT3 INSEL0=TCC(0x8) with TCC0 running: PB17 shows 25% = TCC0 WO[0]. Wraparound confirmed.
+- No TCC3 on J18A → LUT3 wraps back to TCC0, same as LUT0.
+- **Complete mapping: LUT0→TCC0, LUT1→TCC1, LUT2→TCC2, LUT3→TCC0 (wrap).**
+- **INSEL_n=TCC → WO[n] confirmed universally across all tested LUTs.**
+- Pages updated: [[CCL Configuration]]
+
+## [2026-05-06] experiment | TCC0→LUT0 confirmed; INSEL_n→WO[n] law universally verified
+
+- TCC0 NPWM: WO[0]=25%, WO[1]=75%, WO[2]=50%. LUT0 INSEL slot isolated per test.
+- INSEL0→25%, INSEL1→75%, INSEL2→50% on PA07 (LUT0 OUT). All match WO index.
+- Combined with TCC1/LUT1 results: **INSEL_n=TCC routes WO[n]** confirmed for TCC0 and TCC1.
+- Combined with TCC_n→LUT_n: TCC0→LUT0, TCC1→LUT1, TCC2→LUT2 all confirmed.
+- Previous "TCC0→LUT0 disproved" was measurement error (wrong PMUX + TRUTH bug).
+- Pages updated: [[CCL Configuration]]
+
+## [2026-05-06] experiment | TCC2→LUT2 confirmed by scope; EVSYS data discarded
+
+- TCC2 NPWM CC[0]=25% on PA12; LUT2 INSEL0=TCC(0x8), TRUTH=0x02; LUT2 OUT on PA25.
+- PA25 shows 25% → TCC2→LUT2 confirmed. Pattern: TCC_n→LUT_n (n=1,2).
+- TCC0→LUT0 and TCC0→LUT3 disproved (flat scope). EVSYS experiment results discarded.
+- TCC0 routing via INSEL=TCC remains unresolved.
+- Pages updated: [[CCL Configuration]]
+
+## [2026-05-06] experiment | CCL INSEL slot → WO channel mapping confirmed (TCC1/LUT1)
+
+- Method: isolated INSEL slot test — one slot=TCC(0x8), others=MASK(0x0).
+  TCC1 NPWM CC[0]=25%, CC[1]=75%. LUT1 OUT on PA11.
+- INSEL0 → WO[0] (25% ✓), INSEL1 → WO[1] (75% ✓), INSEL2 → WO[2]=WO[0] (25% ✓).
+- **INSEL_n = TCC routes WO[n] to that LUT input.** Slot index = WO index.
+- Consequence: AC?WO0:WO1 mux achievable with zero PCB loopback pins (INSEL0=TCC/WO0, INSEL1=TCC/WO1, INSEL2=AC, TRUTH=0xCA).
+- Prior claim "all slots receive WO[0]" in wiki was wrong — corrected.
+- Pages updated: [[CCL Configuration]]
+
+## [2026-05-06] experiment | CCL INSEL=TCC — TCC1→LUT1 confirmed by oscilloscope
+
+- Method: isolated scope test — PA06=TCC1 WO0 reference, PA11=CCL LUT1 OUT.
+- TCC1 NPWM 100 Hz 50% duty; CCL LUT1 INSEL0=TCC(0x8), TRUTH=0x02 (pass-through).
+- Result: PA11 == PA06, same phase. **INSEL=TCC (0x8) is definitively functional on SAMC21J18A.**
+- No EVSYS/TC chain involved — highest confidence result.
+- Previous EVSYS experiment data (TCC0→LUT0/LUT3, TCC2→LUT1) marked preliminary pending clean re-test.
+- Pages updated: [[CCL Configuration]]
+
+## [2026-05-06] experiment | CCL INSEL=TCC mapping fully verified (systematic test)
+
+- Method: 3 TCCs × 3 INSEL slots × 4 LUTs; EVSYS pulse-counting via TC EVACT=COUNT.
+- **TCC0 → LUT0 and LUT3** (all three INSEL slots); TCC1 → LUT1; TCC2 → LUT2.
+- INSEL slot (IN[0]/IN[1]/IN[2]) does NOT select a different WO channel — all slots
+  receive the same TCC WO[0]. Two different WO outputs cannot both enter the same LUT
+  via INSEL=TCC; WO[1] requires INSEL=IO + physical pin.
+- TCC0 covers LUT3 because TCC3/TCC4 (N-variant) are absent on J18A.
+- Design implication: `WO0 & !AC` gate (TRUTH=0x04) needs zero PCB pins;
+  full `AC ? WO0 : WO1` mux still needs one loopback pin for WO1.
+- Pages updated: [[CCL Configuration]], [[SAMC21 Datasheet Ch.37 CCL]]
+
+## [2026-05-06] query | CCL CTRL naming — CTRLA does not exist
+
+- Build error revealed: CCL register is `CCL->CTRL` (not `CTRLA`) and `CCL_CTRL_ENABLE` (not `CCL_CTRLA_ENABLE`).
+- The datasheet chapter 37 and the concept page both used incorrect `CTRLA` naming.
+- Fixed in: [[CCL Configuration]] (checklist + init example), `src/ccl_tcc_test.hpp`.
+
+## [2026-05-06] query | CclTccTest experiment written
+
+- Written `src/ccl_tcc_test.hpp` — tests whether CCL INSEL=TCC (0x8) is functional on SAMC21J18A.
+- Runs TCC0, TCC1, TCC2 one at a time at ~2 Hz (DIV1024, PER=23436, CC[0]=11718).
+- All 4 LUTs configured: INSEL2=TCC(0x8), INSEL1/0=MASK, TRUTH=0x10 (out=IN[2]).
+- LUT outputs routed to GPIO function I: LUT0→PB23, LUT1→PA11, LUT2→PA25, LUT3→PB17.
+- Sampling 1.5 s per TCC; reports which LUTs toggle → determines TCC→LUT mapping.
+- Hooked into `src/main.cpp` after TcTest::run().
+- Build: SUCCESS (5208 B flash).
+
+## [2026-05-06] query | INSEL=TCC (0x8) likely functional on SAMC21J18A
+
+- Checked CMSIS header `src/core/include/component/ccl.h`.
+- `CCL_LUTCTRL_INSEL0_TCC_Val = 0x8ul` defined as "TCC input source" — NOT reserved.
+- Values 0xA (ALT2TC) and 0xB (ASYNCEVENT) are absent — correctly N-series only.
+- Datasheet "reserved" claim for 0x8 on C20/C21 is likely another inaccuracy (same pattern as TC2 COUNT32 and TC mapping errata).
+- TCC→LUT mapping unknown; needs experimental determination before production use.
+- If functional: TCC2 WO signals routable to CCL without external PCB traces.
+- Pages updated: [[CCL Configuration]], [[SAMC21 Datasheet Ch.37 CCL]]
+
+## [2026-05-06] query | Silicon revision verified — all errata annulled on Rev F
+
+- DSU.DID = 0x11010500 (read at 0x41002018 via J-Link mem32).
+- DEVSEL[7:0] = 0x00 → ATSAMC21J18A confirmed (Table 2 of errata doc: DID=0x1101xx00).
+- REVISION[11:8] = 0x5 → **Rev F** (document covers A=0x0 through E=0x4).
+- Full analysis: **no errata in DS80000740B has X in the Rev E column for E/G/J devices**.
+- Conclusion: all documented errata were fixed by Rev E at the latest → **ALL annulled on Rev F**.
+- Key implications for CCL PWM design:
+  - GCLK_AC (PCHCTRL[34]) IS functional → use it directly, not GCLK_ADC1
+  - CCL TC mapping follows datasheet (TC0/1/2/3 for INSEL=TC on LUT0/1/2/3)
+  - EVSYS synchronous channels work without ONDEMAND workaround
+  - ADC can use synchronous event path
+  - TC I/O pin capture works as documented
+  - CCL RS latch reset works as documented
+- Pages updated: [[SAMC21 Errata]], [[CCL Configuration]]
+
+## [2026-05-06] ingest | SAMC21 Errata DS80000748 (SAMC20_C21_ERRATA.pdf)
+
+- Read full errata document (40 pages). Target silicon: SAMC21J18A-AU, rev A, J-variant.
+- Sources created (1): [[SAMC21 Errata]]
+- Key errata affecting this design:
+  - **1.7.1 CCL RS Latch**: reset not functional; disable LUT to clear.
+  - **1.8.2 AC Clock**: GCLK_AC non-functional; use GCLK_ADC1 (PCHCTRL[36]) instead.
+  - **1.8.3 CCL TC Selection**: hardware TC mapping reversed vs datasheet for INSEL=TC and INSEL=ALTTC.
+  - **1.12.1 EVSYS**: spurious overrun with always-on GCLK; set ONDEMAND=1.
+  - **1.20.2 TC Capture**: I/O pin capture broken; use EVSYS+EIC/CCL path instead.
+  - **1.4.4 ADC Event**: use only asynchronous event path.
+- Pages created/updated: [[SAMC21 Errata]]
+
+## [2026-05-06] ingest | Datasheet Chapter 37 (CCL)
+
+- Read datasheet pages 849–867 (ch37 CCL — complete chapter).
+- Sources created (1): [[SAMC21 Datasheet Ch.37 CCL]]
+- Concepts created (1): [[CCL Configuration]]
+- Notable: INSEL=TCC (0x8) not available on SAM C20/C21 — reserved.
+- Notable: INSEL=AC mapping is fixed: LUT0→COMP0, LUT1→COMP1, LUT2→COMP2, LUT3→COMP3.
+- Notable: LINK direction is LUT(n+1).OUT → LUT(n).IN (higher feeds lower).
+- Notable: TRUTH=0xCA for `AC?WO0:WO1`; TRUTH=0x40 for `AC?WO0:0`.
+- Notable: GCLK_CCL (PCHCTRL[38]) not needed for pure combinational logic.
+- Notable: CCL event generators LUTOUT0–3 at EVSYS indices 82–85.
+- Pages created/updated: [[SAMC21 Datasheet Ch.37 CCL]], [[CCL Configuration]]
+
+## [2026-05-06] query | Errata datasheet DS60001479D §35.6.2.4 — TC2 e modalità 32-bit
+
+- Il datasheet afferma (p. 704): *"TC2 does not support 32-bit resolution."*
+- Esperimento hardware su ATSAMC21J18A-AU (2026-05-06) ha smentito questa affermazione:
+  TC2 in COUNT32 mode + TC3 slave → `STATUS.SLAVE=1`, counter = 74971 dopo 1,6 s (> 65535).
+- Gli header Atmel (`TC2_MASTER=1`, registri `COUNT32_*` definiti) sono coerenti con il
+  funzionamento osservato, non con il datasheet.
+- Pages updated: [[TC 32-Bit Paired Mode]], [[SAMC21 Datasheet Ch.35 TC]]
+
 ## [2026-05-05] lint | Correzione contenuto non richiesto (tc_test.hpp)
 
 - Rimossa la sezione "Verification Result (tc_test.hpp)" da [[TC 32-Bit Paired Mode]]: affermava "TC0+TC1 and TC2+TC3 confirmed working" come fatto, ma era basata su codice sperimentale non in `raw/` e non ingested su richiesta.

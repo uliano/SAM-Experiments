@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/uliano/Documents/SAM-experiments/src/core//**)",
+      "Read(//c/Users/uliano/Documents/SAM-experiments/docs//**)"
+    ]
+  }
+}

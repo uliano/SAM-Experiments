@@ -294,7 +294,7 @@ while (!OSCCTRL->DPLLSTATUS.bit.LOCK &&
 | 1 | CLKFAIL | XOSC failure detected |
 | 0 | XOSCRDY | XOSC ready |
 
-All are synchronous wake-up sources. OSCCTRL shares NVIC line 0 with PM, MCLK, OSC32KCTRL, SUPC, PAC.
+All are synchronous wake-up sources. OSCCTRL shares NVIC line 0 with MCLK, OSC32KCTRL, SUPC, PAC. PM has no interrupt line.
 
 ## See Also
 

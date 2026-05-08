@@ -27,7 +27,7 @@ void adc0_init(void) {
     while (!(GCLK->PCHCTRL[ADC0_GCLK_ID].reg & GCLK_PCHCTRL_CHEN));
 
     // 2. Load calibration from NVM Software Calibration Area
-    uint32_t calib = *((uint32_t *)0x00800080);
+    uint32_t calib = *((uint32_t *)0x00806020);
     ADC0->CALIB.reg =
         ADC_CALIB_BIASCOMP((calib >> 2) & 0x7)
         | ADC_CALIB_BIASREFBUF((calib >> 5) & 0x7);
@@ -191,11 +191,11 @@ while (ADC0->SYNCBUSY.reg & ADC_SYNCBUSY_CTRLC);
 ## Calibration Loading from NVM
 
 ```cpp
-// NVM Software Calibration Area starts at 0x00800080
-// ADC0 BIASCOMP: bits [4:2], ADC0 BIASREFBUF: bits [7:5]
-// ADC1 BIASCOMP: bits [12:10], ADC1 BIASREFBUF: bits [15:13]
+// NVM Software Calibration Area starts at 0x00806020
+// ADC0 BIASCOMP: bits [5:3], ADC0 BIASREFBUF: bits [2:0]
+// ADC1 BIASCOMP: bits [11:9], ADC1 BIASREFBUF: bits [8:6]
 void adc_load_calibration(void) {
-    uint16_t cal = *((uint16_t *)0x00800080);
+    uint16_t cal = *((uint16_t *)0x00806020);
 
     ADC0->CALIB.reg =
         ADC_CALIB_BIASCOMP((cal >> 2) & 0x7)

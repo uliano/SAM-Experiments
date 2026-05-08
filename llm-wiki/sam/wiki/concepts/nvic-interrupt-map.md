@@ -18,7 +18,7 @@ Priority levels: 4 (IPR0–IPR7). Priority 0 = highest.
 | NVIC Line | Peripheral(s) |
 |-----------|--------------|
 | NMI | EIC NMI |
-| 0 | PM, MCLK, OSCCTRL, OSC32KCTRL, SUPC, PAC |
+| 0 | MCLK, OSCCTRL, OSC32KCTRL, SUPC, PAC |
 | 1 | WDT |
 | 2 | RTC |
 | 3 | EIC |

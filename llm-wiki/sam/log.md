@@ -1,5 +1,85 @@
 # Wiki Log
 
+## [2026-05-10] query | Dual-channel AC+CCL+TC architecture — resource allocation
+
+- Formalizzato architettura a 2 canali: TCC0 Heartbeat 375 kHz (WO0=1/8, WO1=7/8,
+  WO2=1/2=PIN_Clock), TCC1 Window (N heartbeat periods, ISR+OVF), 2 istanze identiche
+  di struttura (AC+CCL_mux+CCL_and+TC32).
+- Vincolo critico CCL→TCC: solo LUT0 e LUT3 mappano a TCC0 via INSEL=TCC → mux_A=LUT0
+  (COMP0) e mux_B=LUT3 (COMP3 pair-1). La struttura and_A/and_B usa LUT1/LUT2 con
+  INSEL=IO → richiede 4 trace fisiche di loopback.
+- TRUTH tables calcolate: mux=0xCA (AC?WO1:WO0), and=0x20 (CLK AND AC).
+- TC0+TC1 (Channel A), TC2+TC3 (Channel B, errata §35.6.2.4).
+- 7 open items da verificare su Ch.5/6/37 (pin CMP[n], CCL IO pins, ADC pair-1).
+- Pages created: [[Dual-Channel AC+CCL+TC Architecture]]; index.md updated.
+
+## [2026-05-10] experiment | AC OUT_SYNC 2-FF synchronizer — experimentally verified
+
+- **Test**: ac_sync_test on SAM C21 Rev F (ATSAMC21J18A-AU), GCLK_AC=375 kHz.
+  Switched `AC_COMPCTRL_OUT_SYNC` → `AC_COMPCTRL_OUT_ASYNC` at runtime; scope on
+  PA05 (analog input) and PA19 (CCL LUT0 passthrough of COMP0 state).
+- **Result**: with OUT_SYNC lag = 1–2 GCLK_AC periods (~2.67–5.33 µs).
+  With OUT_ASYNC lag dropped to ~40–100 ns (propagation delay only). Lag entirely
+  eliminated by removing the synchronizer → confirms OUT_SYNC uses a **2-FF
+  synchronizer** internally.
+- **Not documented** in datasheet Ch.40. §40.6.9 says only "CLK_AC-synchronized
+  version"; no mention of pipeline depth or number of flip-flop stages.
+- Latency model: 1–2 GCLK_AC periods (1 if crossing just before edge; 2 if just
+  after). With FLEN=MAJn: total = N to N+1 periods.
+- Previous log entry ("retract 2-FF claim") is superseded by this experimental proof.
+- Pages updated: [[AC Configuration]]
+
+## [2026-05-10] lint | AC OUT_SYNC latency — retract 2-FF synchronizer claim
+
+- **Retraction**: previous entry ("2-FF synchronizer confirmed") was incorrect — not
+  supported by any datasheet section. The 2-FF claim was an unsupported hypothesis.
+- §40.6.9 describes the OUT_SYNC path as a "CLK_AC-synchronized version" — single latch.
+- §40.6.8 is the **only** documented source of multi-period lag: FLEN=MAJ3 adds N−1=2
+  cycles; FLEN=MAJ5 adds N−1=4 cycles.
+- Corrected ac-configuration.md:
+  - OUT_SYNC latency with FLEN=OFF = **max 1 GCLK_AC period** (0–1, quantization).
+  - With FLEN=MAJn: total = N periods max (1 latch + N−1 filter).
+- Multi-period scope observations (reported as "1–2 periods") were likely made while
+  FLEN was non-zero; current code (FLEN=0) should show ≤1 period lag.
+- Cross-validated: SAM-Multislope firmware uses explicit `AC_COMPCTRL_FLEN_OFF |
+  AC_COMPCTRL_OUT_SYNC`; reports single latch, max 1 period.
+- Pages updated: [[AC Configuration]]
+
+## [2026-05-10] lint | AC OUT_SYNC latency correction — 2-FF synchronizer confirmed
+
+- Experimental scope observation: lag = 1–2 GCLK_AC periods at 375 kHz (2.67–5.33 µs).
+- **Previous wiki update was wrong**: changed latency to "max 1 period" based on
+  misreading §40.6.2.4.1. That section says "sampling rate = GCLK_AC" (describes
+  rate, not pipeline depth). A 2-FF synchronizer has 1–2 period latency, not 0–1.
+- Corrected ac-configuration.md: latency = **1–2 GCLK_AC periods** (2-FF synchronizer);
+  minimum 1 when crossing is just before GCLK_AC edge, maximum 2 when just after.
+- FLEN filter latency with corrected base: N to N+1 periods (was N).
+- Also corrected CLAUDE.md: AC_GCLK_ID = 40 (not 34 as stated); confirmed from
+  src/core/include/instance/ac.h. The old "PCHCTRL[34]" was Rev A errata workaround.
+- Pages updated: [[AC Configuration]]; CLAUDE.md updated.
+
+## [2026-05-10] lint | AC Configuration — full Chapter 40 audit and corrections
+
+- Read datasheet Ch.40 (pages 998–1026) in full against existing wiki page.
+- **Errors corrected:**
+  - OUT_SYNC max latency: was "1–2 GCLK_AC periods (2-stage synchronizer)";
+    corrected to **1 GCLK_AC period** (§40.6.2.4.1: sampling rate = GCLK_AC frequency).
+  - CCL INSEL=AC: was "OUT_SYNC required"; corrected to **ASYNC (0x1) or SYNC (0x2)
+    both work** — OUT=OFF (0x0) is the only forbidden value (§40.8.12 note).
+  - MUXNEG 0x6: was "BANDGAP"; corrected to **INTREF** (internal voltage reference,
+    level set by SUPC.VREF.SEL — not a fixed bandgap voltage).
+  - MUXPOS/MUXNEG tables: added **COMP0/1 vs COMP2/3 column** — PIN0–3 map to
+    AIN0–3 for pair 0 and AIN4–7 for pair 1.
+  - Enable-protection: clarified **two-level** protection — EVCTRL protected by
+    AC global CTRLA.ENABLE; COMPCTRL bits protected by COMPCTRLn.ENABLE.
+- **Content added:**
+  - OUT_ASYNC vs OUT_SYNC latency comparison (propagation delay vs 1 GCLK_AC period).
+  - Continuous sleepwalking (RUNSTDBY=1): comparator runs async, GCLK_AC starts
+    temporarily on edge detection; FLEN must be OFF in this configuration.
+  - Interrupt sources section (COMP0–COMP3, WIN0–WIN1).
+  - Event outputs section (COMPEOx, WINEOx, COMPEIx).
+- Pages updated: [[AC Configuration]]
+
 ## [2026-05-06] experiment | LUT2/TCC2 INSEL1+INSEL2 confirmed — mapping 100% complete
 
 - LUT2 INSEL1=TCC → 75% (WO[1]) ✓; INSEL2=TCC → 25% (WO[2]=WO[0], 2 CC only) ✓.

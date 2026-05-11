@@ -27,7 +27,9 @@ Critical differences from the N-variant that affect firmware design:
 - **Port C**: absent on J-variant. Only PA (Port A) and PB (Port B) available.
 - **GCLK IDs**: TCC0+TCC1 share PCHCTRL[**28**]; TCC2 = PCHCTRL[29];
   TC0+TC1 = PCHCTRL[30]; TC2+TC3 = PCHCTRL[31]; TC4 = PCHCTRL[32];
-  CCL = PCHCTRL[38]; AC = PCHCTRL[34] (non-functional, use ADC1=[36]).
+  CCL = PCHCTRL[38]; AC = PCHCTRL[**40**] (AC_GCLK_ID=40 per CMSIS instance/ac.h;
+  the old note "PCHCTRL[34] non-functional, use ADC1=[36]" was Rev A errata only —
+  annulled on Rev F; use AC_GCLK_ID macro, which resolves to 40).
 - **TC2+TC3**: errata §35.6.2.4 warns against use; avoid in new designs even
   though TC2 in COUNT32 mode has been observed to work experimentally.
 

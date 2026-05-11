@@ -1,6 +1,6 @@
 # Wiki Index
 
-_Last updated: 2026-05-06 — 40 sources, 84 wiki pages_
+_Last updated: 2026-05-10 — 40 sources, 84 wiki pages_
 
 ## Sources
 
@@ -97,4 +97,4 @@ _Last updated: 2026-05-06 — 40 sources, 84 wiki pages_
 
 ## Analyses
 
-_(none yet)_
+- [[Dual-Channel AC+CCL+TC Architecture]] — resource allocation for 2-channel AC+CCL+TC32 front-end; TRUTH tables, pin map, loopback constraints

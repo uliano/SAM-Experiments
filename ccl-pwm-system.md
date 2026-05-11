@@ -15,9 +15,12 @@ in place as decisions are made.
    - LUT0: `COMP0 ? WO0 : WO1` — mux, fully internal (no PCB routing)
    - LUT3: `COMP3 ? WO0 : 0` — gate, fully internal (no PCB routing)
 
-3. **AC positive inputs** shared with ADC:
-   - COMP0+ = PA05 → ADC0_AIN5 (pair 0, MUXPOS=PIN1=AIN1)
-   - COMP3+ = PB05 → ADC1_AIN7 (pair 1, MUXPOS=PIN2=AIN6)
+3. **AC positive inputs** shared with ADC — dual-comparator fan-out:
+   - Pair 0: **COMP0 and COMP1** both on PA05 → ADC0_AIN5 (MUXPOS=PIN1=AIN1)
+   - Pair 1: **COMP2 and COMP3** both on PB05 → ADC1_AIN7 (MUXPOS=PIN2=AIN6)
+   - Both comparators in each pair are configured identically (same pin, same threshold).
+     This allows signal A to reach LUT0+LUT1 and signal B to reach LUT2+LUT3 via the
+     fixed INSEL=AC mapping (LUT_n→COMP_n). COMP1/COMP2 were otherwise unused.
    - Avoid PA03/PA04 (VREF conditioning pins on this board).
 
 4. **Counters** — three independent counters, each ≥ 24 bits.
@@ -28,20 +31,40 @@ in place as decisions are made.
 
 ---
 
-## Why LUT0 and LUT3 — Not LUT1/LUT2
+## LUT and CCL Input Routing
 
 INSEL=AC has a fixed hardware mapping: LUT_n → COMP_n.
 INSEL=TCC (0x8) routes TCC_n → LUT_n (with LUT3 wrapping back to TCC0,
 since TCC3 does not exist on SAMC21J18A). Both laws confirmed experimentally
 (scope, 2026-05-06/07).
 
-Using COMP0 and COMP3 as the two comparators:
-- COMP0 reaches LUT0 via INSEL=AC, and TCC0 reaches LUT0 via INSEL=TCC → **fully internal**
-- COMP3 reaches LUT3 via INSEL=AC, and TCC0 reaches LUT3 via INSEL=TCC (wrap) → **fully internal**
+### Active LUTs: LUT0 and LUT3
 
-LUT1 would require COMP1 (fixed) and TCC1 WO signals; LUT2 would require COMP2
-and TCC2 WO signals. Neither pair matches the COMP0/COMP3 comparator selection,
-so LUT1 and LUT2 are not used in this design.
+- COMP0 → LUT0 via INSEL=AC; TCC0 → LUT0 via INSEL=TCC → **fully internal**
+- COMP3 → LUT3 via INSEL=AC; TCC0 → LUT3 via INSEL=TCC (wrap) → **fully internal**
+
+### Dual-Comparator Fan-Out — AC signal to 4 LUTs
+
+COMP1 and COMP2 are configured identically to COMP0 and COMP3 respectively,
+so each AC decision signal is available to two LUTs:
+
+| Signal | Comparators | LUTs reachable |
+|--------|-------------|----------------|
+| A (PA05) | COMP0 = COMP1 | LUT0, LUT1 |
+| B (PB05) | COMP2 = COMP3 | LUT2, LUT3 |
+
+### LUT1/LUT2 Activation Status
+
+| LUT | AC source | WO source | Status |
+|-----|-----------|-----------|--------|
+| LUT0 | COMP0 | TCC0 (internal) | **Active** |
+| LUT1 | COMP1 | TCC1 = period counter — no 375 kHz PWM | Needs PCB WO routing |
+| LUT2 | COMP2 | TCC2 (16-bit) can duplicate TCC0 at 375 kHz on GCLK1 | Activatable internally |
+| LUT3 | COMP3 | TCC0 wrap (internal) | **Active** |
+
+LUT2 can be fully internal: TCC2 on GCLK1 (PCHCTRL[29]) with PER=63 and the
+same CC values as TCC0 gives an identical 375 kHz waveform. LUT1 remains
+blocked because TCC1 is allocated as the period counter (COUNTEV mode, no PWM).
 
 ---
 
@@ -202,15 +225,18 @@ COMP0+ and COMP3+ land on different physical ports and are served by different A
 
 ### AC/ADC Shared Pins
 
-| Comparator | MUXPOS | AIN | Pin | ADC channel | Board note |
-|------------|--------|-----|-----|-------------|------------|
-| COMP0+ | PIN1 | AIN1 | **PA05** | ADC0_AIN5 | free |
-| COMP3+ | PIN2 | AIN6 | **PB05** | ADC1_AIN7 | free |
+| Comparator | MUXPOS | AC AIN | Pin | ADC channel | Role |
+|------------|--------|--------|-----|-------------|------|
+| COMP0+ | PIN1 | AIN1 | **PA05** | ADC0_AIN5 | signal A → LUT0 |
+| COMP1+ | PIN1 | AIN1 | **PA05** | ADC0_AIN5 | signal A → LUT1 (fan-out) |
+| COMP2+ | PIN2 | AIN6 | **PB05** | ADC1_AIN7 | signal B → LUT2 (fan-out) |
+| COMP3+ | PIN2 | AIN6 | **PB05** | ADC1_AIN7 | signal B → LUT3 |
 
-Both pins use function B (analog). The pin pad is simultaneously accessible to
-both the AC input mux and the ADC input mux — no electrical contention.
-PA04 (AIN0) and PA03 (AIN5) are reserved as VREF conditioning pins and must
-not be used.
+Both physical pins use function B (analog). The pin pad is simultaneously
+accessible to both the AC input mux and the ADC input mux — no electrical
+contention, confirmed. COMP0=COMP1 share the same pad; COMP2=COMP3 share the
+same pad — both are valid (separate input mux registers, passive HiZ).
+PA04/PA03 are reserved as VREF conditioning pins and must not be used.
 
 ### AC Clock
 
@@ -224,17 +250,33 @@ while (!(GCLK->PCHCTRL[AC_GCLK_ID].reg & GCLK_PCHCTRL_CHEN));
 
 ### COMPCTRL Values
 
+All four comparators are configured. COMP0 and COMP1 are identical (signal A);
+COMP2 and COMP3 are identical (signal B). The duplication is the fan-out
+mechanism — same pin, same threshold, hardware delivers the result to two LUTs.
+
 ```cpp
-// COMP0: PA05 positive, negative = TBD (VDD scaler / DAC / external)
+// Signal A: PA05 (AIN1 in pair-0). COMP0→LUT0, COMP1→LUT1.
 AC->COMPCTRL[0].reg =
-    AC_COMPCTRL_MUXPOS_PIN1     // PA05 = AIN1
+    AC_COMPCTRL_MUXPOS_PIN1     // PA05 = pair-0 AIN1
     | AC_COMPCTRL_MUXNEG_VSCALE // VDD scaler (VALUE TBD)
     | AC_COMPCTRL_SPEED_HIGH
     | AC_COMPCTRL_ENABLE;
 
-// COMP3: PB05 positive, negative = TBD
+AC->COMPCTRL[1].reg =           // identical to COMP0 — delivers A to LUT1
+    AC_COMPCTRL_MUXPOS_PIN1
+    | AC_COMPCTRL_MUXNEG_VSCALE
+    | AC_COMPCTRL_SPEED_HIGH
+    | AC_COMPCTRL_ENABLE;
+
+// Signal B: PB05 (AIN6 = pair-1 PIN2). COMP2→LUT2, COMP3→LUT3.
+AC->COMPCTRL[2].reg =           // identical to COMP3 — delivers B to LUT2
+    AC_COMPCTRL_MUXPOS_PIN2     // PB05 = pair-1 AIN6
+    | AC_COMPCTRL_MUXNEG_VSCALE
+    | AC_COMPCTRL_SPEED_HIGH
+    | AC_COMPCTRL_ENABLE;
+
 AC->COMPCTRL[3].reg =
-    AC_COMPCTRL_MUXPOS_PIN2     // PB05 = AIN6 (pair-1 pin 2)
+    AC_COMPCTRL_MUXPOS_PIN2     // PB05 = pair-1 AIN6
     | AC_COMPCTRL_MUXNEG_VSCALE
     | AC_COMPCTRL_SPEED_HIGH
     | AC_COMPCTRL_ENABLE;
@@ -313,7 +355,7 @@ GCLK->PCHCTRL[CCL_GCLK_ID ].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; //
 | 3 | CC[0] = N−2 or N−1 for "penultimate" MC0 interrupt | TCC1 register value |
 | 4 | TC0+TC1 and TC2+TC3 purpose | counter init code |
 | 5 | LUT0 and LUT3 physical output pins needed? (PA07, PB17) | PCB routing |
-| 6 | COMP3 MUXPOS=PIN2 for pair-1 (AIN6=PB05): confirm from datasheet Table 6-2 | AC init code |
+| ~~6~~ | ~~COMP3 MUXPOS=PIN2 for pair-1 (AIN6=PB05)~~ | **Resolved**: confirmed via PinAssignments.ods (PB05=AIN6, pair-1 PIN2) |
 
 ---
 
@@ -332,3 +374,6 @@ GCLK->PCHCTRL[CCL_GCLK_ID ].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; //
 | 2026-05-07 | LUT0/LUT3 fully internal | INSEL=TCC confirmed functional; no PCB loopback for WO0/WO1 |
 | 2026-05-07 | TRUTH=0xAC for LUT0 mux | INSEL=TCC forces INSEL1→WO[1] and INSEL0→WO[0]; differs from old IO-routed TRUTH=0xCA |
 | 2026-05-07 | TRUTH=0x20 for LUT3 gate | INSEL2=AC, INSEL1=MASK, INSEL0=TCC→WO[0]; OUT=1 at row5={1,0,1} |
+| 2026-05-10 | Dual-comparator fan-out: COMP0=COMP1 (PA05), COMP2=COMP3 (PB05) | INSEL=AC is fixed LUT_n→COMP_n; configuring both comparators in a pair identically delivers signal A to LUT0+LUT1 and signal B to LUT2+LUT3; COMP1/COMP2 were unused |
+| 2026-05-10 | LUT2 potentially activatable internally via TCC2 | TCC2 (16-bit, PCHCTRL[29]) with GCLK1 and PER=63 duplicates TCC0's 375 kHz; COMP2 provides signal B — no PCB routing needed |
+| 2026-05-10 | LUT1 requires PCB WO routing | TCC1 is allocated as period counter (COUNTEV); no 375 kHz PWM available internally for LUT1 |

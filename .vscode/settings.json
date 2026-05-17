@@ -2,6 +2,8 @@
   "terminal.integrated.env.windows": {
     "PLATFORMIO_CORE_DIR": "${workspaceFolder}\\.pio-core"
   },
+  "terminal.integrated.environmentChangesRelaunch": true,
+
   "editor.colorDecorators": false,
   "C_Cpp.intelliSenseEngine": "default",
   "C_Cpp.errorSquiggles": "enabled",

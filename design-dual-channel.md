@@ -20,6 +20,8 @@ Common hardware:
 - A common window counter counts heartbeat periods and raises:
   - a compare interrupt before the end of the window
   - an overflow interrupt and overflow event at the window boundary
+- PA30 (SWCLK) and PA31 (SWDIO) are reserved for the Atmel-ICE SWD interface and must
+  remain free in all firmware configurations. No peripheral mux is assigned to either pin.
 
 Per channel:
 
@@ -72,13 +74,18 @@ COUNT_PULSE = AC_SYNC & HB_1_2
 
 | Net | MCU source | Pin | Mux | Notes |
 |---|---:|---:|---:|---|
-| `HB_1_8` | `TCC0/WO0` | PA08 | E | Optional physical output/debug. Also used internally by LUT0/LUT3 through `INSEL=TCC`. |
+| `HB_1_8` | `TCC0/WO0` | — | — | No physical output. PA08 repurposed as `CCL_IN3` (DFF_A.Q for LUT1 IN0). TCC0/WO0 still routes to LUT0/LUT3 internally via `INSEL=TCC`. |
 | `HB_7_8` | `TCC0/WO1` | PA09 | E | Optional physical output/debug. Also used internally by LUT0/LUT3 through `INSEL=TCC`. |
 | `HB_1_2` | `TCC0/WO2` | PA10 | F | Physical clock net for both external DFFs and for CCL loopback inputs. |
 
 Important constraint: PA10 cannot be both `TCC0/WO2` output and `CCL_IN5`
 input at the same time. If `HB_1_2` must enter LUT1/LUT2, route PA10 externally
 to separate CCL input pads.
+
+PA30 and PA31 are SWD pins (SWCLK/SWDIO). Both are excluded from all peripheral
+mux assignments. The only non-SWD pin available for `CCL_IN3` (LUT1 IN0) is PA08.
+PA08 is therefore configured as mux I (`CCL_IN3`) rather than mux E (TCC0/WO0),
+and `HB_1_8` has no physical output pin. See Channel A table below.
 
 Required external fanout for `HB_1_2`:
 
@@ -96,7 +103,7 @@ Required external fanout for `HB_1_2`:
 | Analog input A | PA05 | B | `AC_AIN1`, `ADC0_AIN5` |
 | Comparator output A | PA12 | H | `AC_CMP0`, routed to DFF_A.D |
 | DFF_A.Q to mux LUT | PA18 | I | `CCL_IN2`, LUT0 IN2 |
-| DFF_A.Q to gate LUT | PA30 | I | `CCL_IN3`, LUT1 IN0 |
+| DFF_A.Q to gate LUT | PA08 | I | `CCL_IN3`, LUT1 IN0 |
 | Reference output A | PA07 | I | `CCL_OUT0`, LUT0 output |
 | Count/debug output A | PA11 | I | `CCL_OUT1`, LUT1 output, optional physical debug |
 
@@ -125,7 +132,6 @@ ADC0 plus ADC1.
 | XOSC | 24 MHz crystal on PA14/PA15 |
 | GCLK0 | 48 MHz OSC48M, CPU and CCL |
 | GCLK1 | 24 MHz XOSC, TCC0/TCC1 |
-| GCLK2 | 24 MHz / 64 = 375 kHz, optional AC clock |
 | TCC0 | Heartbeat PWM generator |
 | TCC1 | Common window counter, event-counting TCC0 overflow events |
 | AC COMP0 | Channel A comparator, PA05 positive input |
@@ -174,9 +180,9 @@ HB_1_2 high time = 1.333333 us
 Configure pins:
 
 ```text
-PA08 mux E = TCC0/WO0
 PA09 mux E = TCC0/WO1
 PA10 mux F = TCC0/WO2
+PA08 mux I = CCL_IN3   (DFF_A.Q input; HB_1_8 has no physical output)
 ```
 
 ## 6. TCC1 Window Counter Procedure
@@ -234,13 +240,19 @@ implementation-timing sensitive.
 TCC1 overflow event is available as generator `EVSYS_ID_GEN_TCC1_OVF` = 42 if a
 downstream peripheral needs a hardware window-boundary event.
 
+> **Note:** TCC1 `COUNTEV` via `PATH_ASYNCHRONOUS` has not been validated on
+> hardware. `TC EVACT_COUNT` via the same async path was confirmed
+> experimentally (§10). TCC `COUNTEV` is architecturally equivalent but
+> requires separate scope validation. Run `Tcc1CountevTest::run()` from
+> `src/tcc1_countev_test.hpp` before committing this path in production
+> firmware.
+
 ## 7. AC And ADC Procedure
 
 Enable:
 
 ```cpp
 MCLK->APBCMASK.reg |= MCLK_APBCMASK_AC;
-GCLK->PCHCTRL[AC_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN;
 ```
 
 Channel A comparator:
@@ -252,7 +264,7 @@ Channel A comparator:
 | Negative input | Project threshold: `VSCALE`, `INTREF`, or DAC/reference path |
 | Speed | `SPEED_HIGH` |
 | Filter | `FLEN_OFF` |
-| Output | `OUT_ASYNC` recommended when the external DFF does the synchronization |
+| Output | `OUT_ASYNC` |
 | Pad output | PA12 mux H, `AC_CMP0`, to DFF_A.D |
 | ADC | PA05 / `ADC0_AIN5` |
 
@@ -265,7 +277,7 @@ Channel B comparator:
 | Negative input | Project threshold: `VSCALE`, `INTREF`, or DAC/reference path |
 | Speed | `SPEED_HIGH` |
 | Filter | `FLEN_OFF` |
-| Output | `OUT_ASYNC` recommended when the external DFF does the synchronization |
+| Output | `OUT_ASYNC` |
 | Pad output | PA13 mux H, `AC_CMP1`, to DFF_B.D |
 | ADC | PA06 / `ADC0_AIN6` |
 
@@ -281,7 +293,7 @@ Use one dual D-type flip-flop package, for example half A and half B of a
 |---|---|---|
 | `D` | PA12 `AC_CMP0` | PA13 `AC_CMP1` |
 | `CLK` | `HB_1_2` from PA10 | `HB_1_2` from PA10 |
-| `Q` | Fanout to PA18 and PA30 | Fanout to PB16 and PA22 |
+| `Q` | Fanout to PA18 and PA08 | Fanout to PB16 and PA22 |
 | `/PRE` | Pull inactive high | Pull inactive high |
 | `/CLR` | Pull inactive high | Pull inactive high |
 
@@ -295,7 +307,7 @@ Enable:
 
 ```cpp
 MCLK->APBCMASK.reg |= MCLK_APBCMASK_CCL;
-GCLK->PCHCTRL[CCL_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
+CCL->CTRL.reg = CCL_CTRL_ENABLE;
 ```
 
 Disable both CCL sequential pairs:
@@ -370,7 +382,7 @@ COUNT_A = Q_A & HB_1_2
 
 | LUT input | `INSEL` | Source |
 |---|---:|---|
-| IN0 | `IO` | PA30 / `CCL_IN3` = DFF_A.Q |
+| IN0 | `IO` | PA08 / `CCL_IN3` = DFF_A.Q |
 | IN1 | `MASK` | Constant 0 |
 | IN2 | `IO` | PB10 / `CCL_IN5` = external loopback from PA10 `HB_1_2` |
 
@@ -426,7 +438,7 @@ LUT2 event generator -> EVSYS_ID_GEN_CCL_LUTOUT_2 = 84
 | LUT | Function | IN2 | IN1 | IN0 | Truth |
 |---:|---|---|---|---|---:|
 | 0 | `REF_A` mux | PA18 `Q_A` | TCC0/WO1 `HB_7_8` | TCC0/WO0 `HB_1_8` | `0xAC` |
-| 1 | `COUNT_A` gate | PB10 `HB_1_2` | MASK | PA30 `Q_A` | `0x20` |
+| 1 | `COUNT_A` gate | PB10 `HB_1_2` | MASK | PA08 `Q_A` | `0x20` |
 | 2 | `COUNT_B` gate | PA24 `HB_1_2` | MASK | PA22 `Q_B` | `0x20` |
 | 3 | `REF_B` mux | PB16 `Q_B` | TCC0/WO1 `HB_7_8` | TCC0/WO0 `HB_1_8` | `0xAC` |
 
@@ -500,26 +512,26 @@ count CCL pulses and also consume the TCC1 overflow event as a reset trigger.
 
 1. Start OSC48M/GCLK0 as already done by `sys_init()`.
 2. Start the 24 MHz XOSC with timeout and configure `GCLK1`.
-3. Configure `GCLK2 = XOSC / 64` if AC uses that clock.
-4. Enable APB masks for EVSYS, TCC0, TCC1, TC0, TC1, TC2, TC3, AC, CCL, ADC0.
-5. Configure all pins before enabling their peripheral outputs.
-6. Configure TCC0 heartbeat, including `OVFEO`.
-7. Configure EVSYS channel 0 from TCC0 OVF to TCC1 EV0.
-8. Configure TCC1 window counter, but leave it disabled until counters are reset.
-9. Configure AC COMP0/COMP1 and verify `READY0/READY1`.
-10. Configure CCL LUT0..LUT3 with `LUTEO` on LUT1/LUT2.
-11. Configure EVSYS channels 1 and 2 from CCL LUTOUT1/2 to TC0/TC2.
-12. Configure TC0+TC1 and TC2+TC3 as COUNT32 event counters and reset counts.
-13. Enable CCL, TCs, TCC1, then TCC0 in a deterministic order for the first test.
-14. Enable `TCC1_IRQn`; in the handler service `MC0` and `OVF` separately.
+3. Enable APB masks for EVSYS, TCC0, TCC1, TC0, TC1, TC2, TC3, AC, CCL, ADC0.
+4. Configure all pins before enabling their peripheral outputs.
+5. Configure TCC0 heartbeat, including `OVFEO`.
+6. Configure EVSYS channel 0 from TCC0 OVF to TCC1 EV0.
+7. Configure TCC1 window counter, but leave it disabled until counters are reset.
+8. Configure AC COMP0/COMP1 and verify `READY0/READY1`.
+9. Configure CCL LUT0..LUT3 with `LUTEO` on LUT1/LUT2.
+10. Configure EVSYS channels 1 and 2 from CCL LUTOUT1/2 to TC0/TC2.
+11. Configure TC0+TC1 and TC2+TC3 as COUNT32 event counters and reset counts.
+12. Enable CCL, TCs, TCC1, then TCC0 in a deterministic order for the first test.
+13. Enable `TCC1_IRQn`; in the handler service `MC0` and `OVF` separately.
 
 ## 12. Bring-Up Validation Checklist
 
 Scope checks, in order:
 
-1. PA08, PA09, PA10 show 375 kHz waveforms with 1/8, 7/8, 1/2 duty.
+1. PA09 and PA10 show 375 kHz waveforms at 7/8 and 1/2 duty. PA08 is CCL_IN3 (DFF_A.Q
+   input); HB_1_8 has no physical output pin.
 2. PA10 loopback appears on PB10 and PA24 as valid CCL input levels.
-3. PA12 follows COMP0 and PA13 follows COMP1 with `OUT_ASYNC`.
+3. PA12 follows COMP0 and PA13 follows COMP1.
 4. DFF_A.Q only changes on PA10 clock edges.
 5. DFF_B.Q only changes on PA10 clock edges.
 6. PA07 produces `Q_A ? HB_1_8 : HB_7_8`.

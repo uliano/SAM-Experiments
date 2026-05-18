@@ -3,11 +3,13 @@ title: SAMC21 Datasheet Chapter 16 — GCLK
 type: source
 tags: [gclk, clock, samc21, datasheet]
 date: 2026-05-05
+updated: 2026-05-18
 ---
 
 # SAMC21 Datasheet Ch. 16 — GCLK Generic Clock Controller
 
-Source: SAM C20/C21 Data Sheet DS60001479D, chapter 16, pages 137–152.
+Source: SAM C20/C21 Data Sheet chapter 16. Peripheral channel IDs below are
+cross-checked against the local SAMC21J18A CMSIS `instance/*.h` headers.
 
 ## Overview
 
@@ -143,22 +145,25 @@ To change the clock source of an enabled peripheral channel without glitches:
 | 23 | GCLK_SERCOM4_CORE | SERCOM4 core |
 | 24 | GCLK_SERCOM5_SLOW | SERCOM5 slow clock |
 | 25 | GCLK_SERCOM5_CORE | SERCOM5 core |
-| 26 | GCLK_TCC0_TCC1 | TCC0 and TCC1 |
-| 27 | GCLK_TCC2 | TCC2 |
-| 28 | GCLK_TC0_TC1 | TC0 and TC1 |
-| 29 | GCLK_TC2_TC3 | TC2 and TC3 |
-| 30 | GCLK_TC4 | TC4 |
-| 31 | GCLK_ADC0 | ADC0 |
-| 32 | GCLK_ADC1 | ADC1 |
-| 33 | GCLK_SDADC | SDADC |
-| 34 | GCLK_AC | Analog Comparator |
-| 35 | GCLK_DAC | DAC |
-| 36 | GCLK_PTC | Peripheral Touch Controller |
-| 37 | GCLK_CCL | Configurable Custom Logic |
-| 38 | GCLK_CAN0 | CAN0 |
-| 39 | GCLK_CAN1 | CAN1 |
+| 26 | GCLK_CAN0 | CAN0 |
+| 27 | GCLK_CAN1 | CAN1 |
+| 28 | GCLK_TCC0_TCC1 | TCC0 and TCC1 |
+| 29 | GCLK_TCC2 | TCC2 |
+| 30 | GCLK_TC0_TC1 | TC0 and TC1 |
+| 31 | GCLK_TC2_TC3 | TC2 and TC3 |
+| 32 | GCLK_TC4 | TC4 |
+| 33 | GCLK_ADC0 | ADC0 |
+| 34 | GCLK_ADC1 | ADC1 |
+| 35 | GCLK_SDADC | SDADC |
+| 36 | GCLK_DAC | DAC |
+| 37 | GCLK_PTC | Peripheral Touch Controller |
+| 38 | GCLK_CCL | Configurable Custom Logic |
+| 39 | GCLK_NVMCTRL | NVMCTRL test clock |
+| 40 | GCLK_AC | Analog Comparator |
 
-Note: indices 19 onwards are from the continuation of the PCHCTRLm mapping table (not shown in pages 151–152 above). The firmware uses `TC0_GCLK_ID` / `SERCOM5_GCLK_ID_CORE` constants from the CMSIS headers.
+Note: for target firmware, prefer the CMSIS macros (`TCC0_GCLK_ID`,
+`TC0_GCLK_ID`, `CCL_GCLK_ID`, `AC_GCLK_ID`, etc.) over hand-coded PCHCTRL
+indices.
 
 ## Typical Generator Setup
 

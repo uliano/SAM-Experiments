@@ -1,5 +1,17 @@
 # Wiki Log
 
+## [2026-05-18] correction | DS80000740S errata and AC async design rule
+
+- Re-checked the current local errata PDF, `DS80000740S` (April 2026), against
+  the target ATSAMC21J18A Rev F. The previous "all errata annulled on Rev F"
+  conclusion was based on an older import and is superseded.
+- Updated [[SAMC20/C21 Errata (DS80000740S)]], [[CCL Configuration]],
+  [[AC Configuration]], and [[EVSYS]].
+- Project rule confirmed: AC still needs `GCLK_AC` enabled, but the dual-channel
+  DFF sampling path uses `OUT_ASYNC`; `OUT_SYNC` measured lag is unacceptable.
+- Datasheet §29.6.2.2 confirms EVSYS initialization order: configure `USERm`
+  before `CHANNELn`.
+
 ## [2026-05-10] query | Dual-channel AC+CCL+TC architecture — resource allocation
 
 - Formalizzato architettura a 2 canali: TCC0 Heartbeat 375 kHz (WO0=1/8, WO1=7/8,
@@ -114,8 +126,8 @@
 
 - TCC2 NPWM CC[0]=25% on PA12; LUT2 INSEL0=TCC(0x8), TRUTH=0x02; LUT2 OUT on PA25.
 - PA25 shows 25% → TCC2→LUT2 confirmed. Pattern: TCC_n→LUT_n (n=1,2).
-- TCC0→LUT0 and TCC0→LUT3 disproved (flat scope). EVSYS experiment results discarded.
-- TCC0 routing via INSEL=TCC remains unresolved.
+- Superseded: later corrected scope tests showed the flat TCC0 result was a
+  setup/PMUX issue, not a routing failure. TCC0 routes to LUT0 and LUT3.
 - Pages updated: [[CCL Configuration]]
 
 ## [2026-05-06] experiment | CCL INSEL slot → WO channel mapping confirmed (TCC1/LUT1)
@@ -137,16 +149,14 @@
 - Previous EVSYS experiment data (TCC0→LUT0/LUT3, TCC2→LUT1) marked preliminary pending clean re-test.
 - Pages updated: [[CCL Configuration]]
 
-## [2026-05-06] experiment | CCL INSEL=TCC mapping fully verified (systematic test)
+## [2026-05-06] experiment | Superseded CCL INSEL=TCC EVSYS-counting test
 
-- Method: 3 TCCs × 3 INSEL slots × 4 LUTs; EVSYS pulse-counting via TC EVACT=COUNT.
-- **TCC0 → LUT0 and LUT3** (all three INSEL slots); TCC1 → LUT1; TCC2 → LUT2.
-- INSEL slot (IN[0]/IN[1]/IN[2]) does NOT select a different WO channel — all slots
-  receive the same TCC WO[0]. Two different WO outputs cannot both enter the same LUT
-  via INSEL=TCC; WO[1] requires INSEL=IO + physical pin.
-- TCC0 covers LUT3 because TCC3/TCC4 (N-variant) are absent on J18A.
-- Design implication: `WO0 & !AC` gate (TRUTH=0x04) needs zero PCB pins;
-  full `AC ? WO0 : WO1` mux still needs one loopback pin for WO1.
+- Method used EVSYS pulse-counting via TC `EVACT=COUNT`; later scope tests
+  superseded this entry.
+- Corrected result: TCC0 routes to LUT0 and LUT3, TCC1 routes to LUT1, TCC2
+  routes to LUT2; the INSEL slot selects WO[0]/WO[1]/WO[2].
+- Corrected design implication: `AC ? WO0 : WO1` can be done internally on the
+  matching LUT when the AC comparator mapping also matches the LUT.
 - Pages updated: [[CCL Configuration]], [[SAMC21 Datasheet Ch.37 CCL]]
 
 ## [2026-05-06] query | CCL CTRL naming — CTRLA does not exist
@@ -175,29 +185,29 @@
 - If functional: TCC2 WO signals routable to CCL without external PCB traces.
 - Pages updated: [[CCL Configuration]], [[SAMC21 Datasheet Ch.37 CCL]]
 
-## [2026-05-06] query | Silicon revision verified — all errata annulled on Rev F
+## [2026-05-06] query | Silicon revision verified — superseded errata conclusion
 
 - DSU.DID = 0x11010500 (read at 0x41002018 via J-Link mem32).
 - DEVSEL[7:0] = 0x00 → ATSAMC21J18A confirmed (Table 2 of errata doc: DID=0x1101xx00).
 - REVISION[11:8] = 0x5 → **Rev F** (document covers A=0x0 through E=0x4).
-- Full analysis: **no errata in DS80000740B has X in the Rev E column for E/G/J devices**.
-- Conclusion: all documented errata were fixed by Rev E at the latest → **ALL annulled on Rev F**.
-- Key implications for CCL PWM design:
-  - GCLK_AC (PCHCTRL[34]) IS functional → use it directly, not GCLK_ADC1
-  - CCL TC mapping follows datasheet (TC0/1/2/3 for INSEL=TC on LUT0/1/2/3)
-  - EVSYS synchronous channels work without ONDEMAND workaround
-  - ADC can use synchronous event path
-  - TC I/O pin capture works as documented
-  - CCL RS latch reset works as documented
+- Superseded by the 2026-05-18 DS80000740S pass. This entry used the older
+  DS80000740B import and its "all errata annulled" conclusion must not be used.
+- Correct current implications:
+  - Use `AC_GCLK_ID=40`, but keep the project AC output path `OUT_ASYNC`.
+  - Configure CCL `SEQCTRLx`/`LUTCTRLn` while `CCL->CTRL.ENABLE=0`.
+  - Use EVSYS `PATH_ASYNCHRONOUS` for TCC users and ADC event paths.
+  - Read [[SAMC20/C21 Errata (DS80000740S)]] before expanding the design.
 - Pages updated: [[SAMC21 Errata]], [[CCL Configuration]]
 
-## [2026-05-06] ingest | SAMC21 Errata DS80000748 (SAMC20_C21_ERRATA.pdf)
+## [2026-05-06] ingest | Superseded old SAMC21 errata import
 
+- Historical import from an older errata document. Superseded by the 2026-05-18
+  DS80000740S pass.
 - Read full errata document (40 pages). Target silicon: SAMC21J18A-AU, rev A, J-variant.
 - Sources created (1): [[SAMC21 Errata]]
-- Key errata affecting this design:
+- Historical key errata from that old document, not current authority:
   - **1.7.1 CCL RS Latch**: reset not functional; disable LUT to clear.
-  - **1.8.2 AC Clock**: GCLK_AC non-functional; use GCLK_ADC1 (PCHCTRL[36]) instead.
+  - **1.8.2 AC Clock**: historical workaround about AC/ADC1 clocking.
   - **1.8.3 CCL TC Selection**: hardware TC mapping reversed vs datasheet for INSEL=TC and INSEL=ALTTC.
   - **1.12.1 EVSYS**: spurious overrun with always-on GCLK; set ONDEMAND=1.
   - **1.20.2 TC Capture**: I/O pin capture broken; use EVSYS+EIC/CCL path instead.

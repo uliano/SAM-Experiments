@@ -2,9 +2,9 @@
 title: TCC Configuration
 type: concept
 tags: [tcc, timer, pwm, capture, firmware, samc21]
-sources: [samc21-datasheet-ch36-tcc]
+sources: [samc21-datasheet-ch36-tcc, samc21-errata]
 created: 2026-05-05
-updated: 2026-05-05
+updated: 2026-05-18
 ---
 
 # TCC Configuration
@@ -211,6 +211,9 @@ Dual-slope: halve the frequency for the same PER value.
 - CTRLB.LUPD=1 suspends buffer updates (useful for atomic multi-channel updates).
 - CTRLA.ALOCK: auto-sets LUPD on each update event (useful for circular buffer DMA).
 - WEXCTRL and DRVCTRL are enable-protected — configure before ENABLE=1.
+- Current errata 1.21.9: when TCC uses EVSYS, route the EVSYS channel as
+  `PATH_ASYNCHRONOUS`; TCC is not compatible with SYNC/RESYNC EVSYS mode on the
+  target Rev F silicon.
 - Fault filtering: async input filtered by FILTERVAL digital filter; BLANK window
   suppresses fault re-arm after each PWM edge to avoid glitch-triggered faults.
 - Recoverable faults set STATUS.FAULTx; software must clear it for software halt mode.

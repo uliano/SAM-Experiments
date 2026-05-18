@@ -132,6 +132,7 @@ ADC0 plus ADC1.
 | XOSC | 24 MHz crystal on PA14/PA15 |
 | GCLK0 | 48 MHz OSC48M, CPU and CCL |
 | GCLK1 | 24 MHz XOSC, TCC0/TCC1 |
+| GCLK_AC | Use GCLK0 for AC register/status operation; comparator output path remains asynchronous |
 | TCC0 | Heartbeat PWM generator |
 | TCC1 | Common window counter, event-counting TCC0 overflow events |
 | AC COMP0 | Channel A comparator, PA05 positive input |
@@ -204,11 +205,14 @@ EVSYS route:
 |---:|---:|---:|---|
 | 0 | `EVSYS_ID_GEN_TCC0_OVF` = 35 | `EVSYS_ID_USER_TCC1_EV_0` = 15 | `ASYNC` |
 
+`ASYNC` is required here. Current errata DS80000740S section 1.21.9 says TCC is
+not compatible with EVSYS `SYNC` or `RESYNC` mode.
+
 ```cpp
+EVSYS->USER[EVSYS_ID_USER_TCC1_EV_0].reg = EVSYS_USER_CHANNEL(1); // channel 0 + 1
 EVSYS->CHANNEL[0].reg =
     EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_TCC0_OVF) |
     EVSYS_CHANNEL_PATH_ASYNCHRONOUS;
-EVSYS->USER[EVSYS_ID_USER_TCC1_EV_0].reg = EVSYS_USER_CHANNEL(1); // channel 0 + 1
 ```
 
 TCC1 setup for a window of `N` heartbeat periods:
@@ -253,7 +257,12 @@ Enable:
 
 ```cpp
 MCLK->APBCMASK.reg |= MCLK_APBCMASK_AC;
+GCLK->PCHCTRL[AC_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
+while (!(GCLK->PCHCTRL[AC_GCLK_ID].reg & GCLK_PCHCTRL_CHEN));
 ```
+
+`GCLK_AC` is required by the AC peripheral before use. It is not used to retime
+the comparator output in this design.
 
 Channel A comparator:
 
@@ -281,6 +290,15 @@ Channel B comparator:
 | Pad output | PA13 mux H, `AC_CMP1`, to DFF_B.D |
 | ADC | PA06 / `ADC0_AIN6` |
 
+Use `OUT_ASYNC` for both comparators. `OUT_SYNC` was experimentally observed to
+add up to two `GCLK_AC` cycles of lag, which is not acceptable for the external
+DFF sampling path.
+
+If `INTREF` is selected as the negative input, account for current errata
+DS80000740S section 1.5.6: a spurious COMP interrupt can occur when enabling
+the AC. Prefer `VSCALE` when it satisfies the analog requirement, or clear/ignore
+the first COMP interrupt after enabling with `INTREF`.
+
 Do not label PA05/PA06 as `ADC0_AIN1`/`ADC0_AIN2`; the headers define them as
 `ADC0_AIN5` and `ADC0_AIN6`.
 
@@ -303,11 +321,13 @@ default assumption in this design is that `Q` updates on the rising edge of
 
 ## 9. CCL Procedure
 
-Enable:
+Enable clocks, then configure while the CCL global enable is clear:
 
 ```cpp
 MCLK->APBCMASK.reg |= MCLK_APBCMASK_CCL;
-CCL->CTRL.reg = CCL_CTRL_ENABLE;
+GCLK->PCHCTRL[CCL_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
+while (!(GCLK->PCHCTRL[CCL_GCLK_ID].reg & GCLK_PCHCTRL_CHEN));
+CCL->CTRL.reg = 0;
 ```
 
 Disable both CCL sequential pairs:
@@ -316,6 +336,12 @@ Disable both CCL sequential pairs:
 CCL->SEQCTRL[0].reg = 0;
 CCL->SEQCTRL[1].reg = 0;
 ```
+
+Current errata DS80000740S section 1.7.3 makes `SEQCTRLx` and `LUTCTRLx`
+enable-protected by `CTRL.ENABLE` on the target Rev F family. Write all
+`SEQCTRL` and `LUTCTRL` values, including each required `LUTCTRLn.ENABLE` bit,
+before setting `CCL->CTRL.ENABLE`. Avoid `CCL->CTRL.SWRST` in production paths
+because errata section 1.7.4 reports a PAC protection error on software reset.
 
 Truth-table bit index is:
 
@@ -442,6 +468,14 @@ LUT2 event generator -> EVSYS_ID_GEN_CCL_LUTOUT_2 = 84
 | 2 | `COUNT_B` gate | PA24 `HB_1_2` | MASK | PA22 `Q_B` | `0x20` |
 | 3 | `REF_B` mux | PB16 `Q_B` | TCC0/WO1 `HB_7_8` | TCC0/WO0 `HB_1_8` | `0xAC` |
 
+All four active LUTs need `LUTCTRLn.ENABLE` set in the `LUTCTRLn` write.
+LUT1 and LUT2 also need `LUTEO=1` for the EVSYS count routes. After all
+`SEQCTRL` and `LUTCTRL` writes are complete:
+
+```cpp
+CCL->CTRL.reg = CCL_CTRL_ENABLE;
+```
+
 ## 10. EVSYS And TC32 Counter Procedure
 
 Enable:
@@ -464,15 +498,15 @@ Event routes:
 | 2 | `EVSYS_ID_GEN_CCL_LUTOUT_2` = 84 | `EVSYS_ID_USER_TC2_EVU` = 25 | `ASYNC` |
 
 ```cpp
+EVSYS->USER[EVSYS_ID_USER_TC0_EVU].reg = EVSYS_USER_CHANNEL(2); // channel 1 + 1
 EVSYS->CHANNEL[1].reg =
     EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_CCL_LUTOUT_1) |
     EVSYS_CHANNEL_PATH_ASYNCHRONOUS;
-EVSYS->USER[EVSYS_ID_USER_TC0_EVU].reg = EVSYS_USER_CHANNEL(2); // channel 1 + 1
 
+EVSYS->USER[EVSYS_ID_USER_TC2_EVU].reg = EVSYS_USER_CHANNEL(3); // channel 2 + 1
 EVSYS->CHANNEL[2].reg =
     EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_CCL_LUTOUT_2) |
     EVSYS_CHANNEL_PATH_ASYNCHRONOUS;
-EVSYS->USER[EVSYS_ID_USER_TC2_EVU].reg = EVSYS_USER_CHANNEL(3); // channel 2 + 1
 ```
 
 Use asynchronous EVSYS path for `TC_EVACT_COUNT`. Existing local tests showed
@@ -513,16 +547,17 @@ count CCL pulses and also consume the TCC1 overflow event as a reset trigger.
 1. Start OSC48M/GCLK0 as already done by `sys_init()`.
 2. Start the 24 MHz XOSC with timeout and configure `GCLK1`.
 3. Enable APB masks for EVSYS, TCC0, TCC1, TC0, TC1, TC2, TC3, AC, CCL, ADC0.
-4. Configure all pins before enabling their peripheral outputs.
-5. Configure TCC0 heartbeat, including `OVFEO`.
-6. Configure EVSYS channel 0 from TCC0 OVF to TCC1 EV0.
-7. Configure TCC1 window counter, but leave it disabled until counters are reset.
-8. Configure AC COMP0/COMP1 and verify `READY0/READY1`.
-9. Configure CCL LUT0..LUT3 with `LUTEO` on LUT1/LUT2.
-10. Configure EVSYS channels 1 and 2 from CCL LUTOUT1/2 to TC0/TC2.
-11. Configure TC0+TC1 and TC2+TC3 as COUNT32 event counters and reset counts.
-12. Enable CCL, TCs, TCC1, then TCC0 in a deterministic order for the first test.
-13. Enable `TCC1_IRQn`; in the handler service `MC0` and `OVF` separately.
+4. Configure generic clocks for TCC0/TCC1, TC0/TC2, AC, and CCL.
+5. Configure all pins before enabling their peripheral outputs.
+6. Configure TCC0 heartbeat, including `OVFEO`.
+7. Configure EVSYS channel 0 from TCC0 OVF to TCC1 EV0: write `USER`, then `CHANNEL`.
+8. Configure TCC1 window counter, but leave it disabled until counters are reset.
+9. Configure AC COMP0/COMP1 as `OUT_ASYNC` and verify `READY0/READY1`.
+10. Configure CCL LUT0..LUT3 with `CTRL.ENABLE=0`; include `LUTEO` on LUT1/LUT2.
+11. Configure EVSYS channels 1 and 2 from CCL LUTOUT1/2 to TC0/TC2: write `USER`, then `CHANNEL`.
+12. Configure TC0+TC1 and TC2+TC3 as COUNT32 event counters and reset counts.
+13. Enable CCL, TCs, TCC1, then TCC0 in a deterministic order for the first test.
+14. Enable `TCC1_IRQn`; in the handler service `MC0` and `OVF` separately.
 
 ## 12. Bring-Up Validation Checklist
 
@@ -557,6 +592,7 @@ Scope checks, in order:
 - `CC[0]=N-2` for the TCC1 prep interrupt means "start of the penultimate
   interval" with zero-based interval numbering. If the intended semantic is
   "start of the last interval", validate `CC[0]=N-1` on hardware.
-- TC2+TC3 COUNT32 is locally observed as functional, but the family errata notes
-  TC2/TC3 pairing issues. Treat that as a board qualification item before
-  freezing the production design.
+- TC2+TC3 COUNT32 is locally observed as functional. Older wiki/datasheet notes
+  around TC pairing must not be treated as current errata without checking
+  DS80000740S; keep TC2+TC3 in the board qualification checklist before freezing
+  the production design.

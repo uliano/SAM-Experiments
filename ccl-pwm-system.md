@@ -3,6 +3,10 @@
 Tracks the architecture and open questions for the AC-gated PWM system. Update
 in place as decisions are made.
 
+> Status: historical design note. For the current dual-channel design and the
+> current DS80000740S errata pass, use `design-dual-channel.md` and
+> `llm-wiki/sam/wiki/sources/samc21-errata.md` as the authority.
+
 ---
 
 ## Requirements
@@ -70,7 +74,9 @@ blocked because TCC1 is allocated as the period counter (COUNTEV mode, no PWM).
 
 ## Peripheral Constraints — SAMC21J18A-AU
 
-**J-variant (64-pin). Silicon revision: Rev F (DSU.DID=0x11010500). All errata annulled.**
+**J-variant (64-pin). Silicon revision: Rev F (DSU.DID=0x11010500). Current
+DS80000740S still lists Rev-F-active errata; do not use older "all errata
+annulled" notes.**
 
 - **Timers available**: TC0–TC4, TCC0–TCC2. TC5/TC6/TC7 do not exist.
 - **TC4 is standalone**: 16-bit only (no TC5 to pair).
@@ -193,25 +199,27 @@ while (!(GCLK->PCHCTRL[CCL_GCLK_ID].reg & GCLK_PCHCTRL_CHEN));
 
 // Disable CCL before configuring
 CCL->CTRL.reg = 0;
+CCL->SEQCTRL[0].reg = 0;
+CCL->SEQCTRL[1].reg = 0;
 
 // LUT0: COMP0 ? WO0 : WO1
 CCL->LUTCTRL[0].reg =
     (0xACu                    << CCL_LUTCTRL_TRUTH_Pos)  |
     (CCL_LUTCTRL_INSEL2_AC    << CCL_LUTCTRL_INSEL2_Pos) |  // COMP0
     (CCL_LUTCTRL_INSEL1_TCC   << CCL_LUTCTRL_INSEL1_Pos) |  // WO[1]
-    (CCL_LUTCTRL_INSEL0_TCC   << CCL_LUTCTRL_INSEL0_Pos);   // WO[0]
+    (CCL_LUTCTRL_INSEL0_TCC   << CCL_LUTCTRL_INSEL0_Pos) |  // WO[0]
+    CCL_LUTCTRL_ENABLE;
 
 // LUT3: COMP3 ? WO0 : 0
 CCL->LUTCTRL[3].reg =
     (0x20u                    << CCL_LUTCTRL_TRUTH_Pos)  |
     (CCL_LUTCTRL_INSEL2_AC    << CCL_LUTCTRL_INSEL2_Pos) |  // COMP3
     (CCL_LUTCTRL_INSEL1_MASK  << CCL_LUTCTRL_INSEL1_Pos) |  // 0
-    (CCL_LUTCTRL_INSEL0_TCC   << CCL_LUTCTRL_INSEL0_Pos);   // WO[0]
+    (CCL_LUTCTRL_INSEL0_TCC   << CCL_LUTCTRL_INSEL0_Pos) |  // WO[0]
+    CCL_LUTCTRL_ENABLE;
 
-// Enable CCL, then enable each LUT
+// Enable CCL only after all LUTCTRL writes (DS80000740S 1.7.3)
 CCL->CTRL.reg = CCL_CTRL_ENABLE;
-CCL->LUTCTRL[0].reg |= CCL_LUTCTRL_ENABLE;
-CCL->LUTCTRL[3].reg |= CCL_LUTCTRL_ENABLE;
 ```
 
 ---
@@ -240,10 +248,13 @@ PA04/PA03 are reserved as VREF conditioning pins and must not be used.
 
 ### AC Clock
 
-Errata 1.8.2 (GCLK_AC non-functional) was Rev A only — **annulled on Rev F**.
+Use the current AC generic clock channel, `AC_GCLK_ID = 40`. The old
+`PCHCTRL[34]`/ADC1-clock workaround is not a current Rev-F rule. AC output for
+low-latency sampling must be `OUT_ASYNC`; `OUT_SYNC` was measured to add up to
+two `GCLK_AC` cycles of lag.
 
 ```cpp
-MCLK->APBBMASK.reg |= MCLK_APBBMASK_AC;
+MCLK->APBCMASK.reg |= MCLK_APBCMASK_AC;
 GCLK->PCHCTRL[AC_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 while (!(GCLK->PCHCTRL[AC_GCLK_ID].reg & GCLK_PCHCTRL_CHEN));
 ```
@@ -312,11 +323,13 @@ TCC1 configuration:
 
 ### Event System
 
-Errata 1.12.1 (spurious overrun) was Rev A–D — **annulled on Rev F**.
+Current DS80000740S still lists EVSYS errata on Rev F. In particular, TCC users
+must use `PATH_ASYNCHRONOUS` because errata 1.21.9 says TCC is not compatible
+with EVSYS SYNC/RESYNC mode.
 
 | EVSYS channel | Generator | User | Path |
 |---------------|-----------|------|------|
-| ch0 | TCC0 OVF | TCC1 EV0 | SYNCHRONOUS (same GCLK1) |
+| ch0 | TCC0 OVF | TCC1 EV0 | ASYNCHRONOUS |
 | ch1 | TCC1 OVF | TBD downstream | TBD |
 
 ---
@@ -329,7 +342,7 @@ MCLK->APBCMASK.reg |= MCLK_APBCMASK_TCC0 | MCLK_APBCMASK_TCC1;
 MCLK->APBCMASK.reg |= MCLK_APBCMASK_TC0  | MCLK_APBCMASK_TC1;
 MCLK->APBCMASK.reg |= MCLK_APBCMASK_TC2  | MCLK_APBCMASK_TC3;
 MCLK->APBCMASK.reg |= MCLK_APBCMASK_CCL;
-MCLK->APBBMASK.reg |= MCLK_APBBMASK_AC;
+MCLK->APBCMASK.reg |= MCLK_APBCMASK_AC;
 MCLK->APBCMASK.reg |= MCLK_APBCMASK_ADC0 | MCLK_APBCMASK_ADC1;
 MCLK->APBCMASK.reg |= MCLK_APBCMASK_EVSYS;
 
@@ -363,9 +376,10 @@ GCLK->PCHCTRL[CCL_GCLK_ID ].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; //
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-05-06 | Silicon Rev F confirmed (DSU.DID=0x11010500) | All documented errata annulled |
-| 2026-05-06 | AC clock via GCLK_AC (PCHCTRL[34]) | Errata 1.8.2 annulled on Rev F |
-| 2026-05-06 | EVSYS: no ONDEMAND workaround | Errata 1.12.1 annulled on Rev F |
+| 2026-05-06 | Silicon Rev F confirmed (DSU.DID=0x11010500) | Superseded by 2026-05-18 DS80000740S recheck: Rev F has active errata |
+| 2026-05-06 | AC clock via GCLK_AC | Correct channel is `AC_GCLK_ID=40`; keep AC output `OUT_ASYNC` for low-latency paths |
+| 2026-05-06 | EVSYS path choice | Superseded by 2026-05-18 recheck: TCC users require ASYNC EVSYS path |
+| 2026-05-18 | Errata baseline updated to DS80000740S | Rev-F-active errata affect CCL, EVSYS, ADC, AC, and TCC design rules |
 | 2026-05-06 | Period counter → TCC1 (COUNTEV) | Clean N-event counting with CC[0]/OVF |
 | 2026-05-07 | PWM source → TCC0 (not TCC2) | INSEL=TCC routes TCC0 to LUT0 and LUT3 internally; TCC2 would only reach LUT2 internally |
 | 2026-05-07 | AC pair → COMP0 + COMP3 (not COMP1) | COMP0 (pair 0) shares PA05 with ADC0; COMP3 (pair 1) shares PB05 with ADC1 — two independent ADCs |

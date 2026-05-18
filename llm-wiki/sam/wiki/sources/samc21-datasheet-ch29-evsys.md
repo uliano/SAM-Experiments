@@ -3,6 +3,7 @@ title: SAMC21 Datasheet Chapter 29 — EVSYS
 type: source
 tags: [evsys, events, dma, timer, samc21, datasheet]
 date: 2026-05-05
+updated: 2026-05-18
 ---
 
 # SAMC21 Datasheet Ch. 29 — EVSYS – Event System
@@ -128,12 +129,12 @@ Selected key entries:
 | 0 | TSENS START | Async/Sync/Resync |
 | 1–4 | PORT EV0–EV3 | Async only |
 | 5–8 | DMAC CH0–CH3 | Async/Sync/Resync |
-| 9–14 | TCC0 EV0/EV1/MC0–MC3 | Async/Sync/Resync |
-| 15–18 | TCC1 EV0/EV1/MC0/MC1 | Async/Sync/Resync |
-| 19–22 | TCC2 EV0/EV1/MC0/MC1 | Async/Sync/Resync |
+| 9–14 | TCC0 EV0/EV1/MC0–MC3 | Datasheet: Async/Sync/Resync; target errata: use Async |
+| 15–18 | TCC1 EV0/EV1/MC0/MC1 | Datasheet: Async/Sync/Resync; target errata: use Async |
+| 19–22 | TCC2 EV0/EV1/MC0/MC1 | Datasheet: Async/Sync/Resync; target errata: use Async |
 | 23–27 | TC0–TC4 | Async/Sync/Resync |
-| 28–29 | ADC0 START/SYNC | Async/Sync/Resync |
-| 30–31 | ADC1 START/SYNC | Async/Sync/Resync |
+| 28–29 | ADC0 START/SYNC | Datasheet: Async/Sync/Resync; target errata: use Async |
+| 30–31 | ADC1 START/SYNC | Datasheet: Async/Sync/Resync; target errata: use Async |
 | 32 | SDADC START | Async only |
 | 33 | SDADC FLUSH | Async only |
 | 34–37 | AC COMP0–COMP3 | Async only |
@@ -147,6 +148,10 @@ Selected key entries:
 - Always configure USER before CHANNELn.
 - CHANNELn must be written as a single 32-bit word.
 - Asynchronous PATH: no GCLK, no EDGSEL, no interrupts. Edge detection must be configured in the user peripheral.
+- Current errata DS80000740S 1.21.9 overrides the nominal TCC path table for
+  target Rev F: use `PATH_ASYNCHRONOUS` for TCC EVSYS users.
+- Current errata DS80000740S 1.4.4 overrides the nominal ADC path table for
+  target Rev F: use `PATH_ASYNCHRONOUS` for ADC EVSYS users.
 - CHSTATUS.USRRDYn resets to 0xFF (channels 0–7 appear ready even without users connected).
 - Overrun condition: new event before previous was handled by all users. Only for sync/resync.
 - SWEVT allows CPU to trigger any channel via software.

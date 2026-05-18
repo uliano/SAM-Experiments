@@ -4,15 +4,16 @@ type: source
 tags: [ac, comparator, analog, samc21, datasheet]
 sources: [samc21-datasheet-ch40-ac]
 created: 2026-05-05
-updated: 2026-05-05
+updated: 2026-05-18
 ---
 
 # SAMC21 Datasheet Ch.40 AC
 
 Analog Comparators. Four individual comparators grouped in two pairs:
-(COMP0, COMP1) and (COMP2, COMP3). Requires GCLK_AC for filtering and
-synchronized output, but continuous mode can detect asynchronously (clockless
-in STANDBY).
+(COMP0, COMP1) and (COMP2, COMP3). The datasheet requires `GCLK_AC` to be
+configured before using the AC. The comparator output can still be routed as
+`OUT_ASYNC`; continuous standby detection can run asynchronously when the clock
+is stopped.
 
 ## Abstract
 
@@ -27,7 +28,9 @@ pair. VDD scaler with 64 levels available as a reference input.
 - Inputs: AIN[7:0] (positive and negative mux), internal DAC, VDD scaler,
   bandgap, ground.
 - Outputs: CMP[3:0] digital output pins, optional event outputs.
-- GCLK_AC required for filtering and output synchronization.
+- GCLK_AC must be configured and enabled before using the AC.
+- Project low-latency paths use `OUT_ASYNC`; `OUT_SYNC` adds GCLK_AC-domain
+  latency.
 - Only EVCTRL is enable-protected; all other registers except CTRLA are NOT
   enable-protected.
 - Write-synchronized (poll SYNCBUSY): CTRLA.SWRST, CTRLA.ENABLE,

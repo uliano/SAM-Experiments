@@ -2,9 +2,9 @@
 title: AC Configuration
 type: concept
 tags: [ac, comparator, analog, firmware, samc21]
-sources: [samc21-datasheet-ch40-ac]
+sources: [samc21-datasheet-ch40-ac, samc21-errata]
 created: 2026-05-05
-updated: 2026-05-10
+updated: 2026-05-18
 ---
 
 # AC Configuration
@@ -17,7 +17,7 @@ operation, with optional digital filter, hysteresis, window mode, and VDD scaler
 
 ```cpp
 // COMP0: AIN1 positive, VDD scaler negative (VDD/2 = 64 levels → VALUE=31)
-// Continuous mode, high speed, output sync to GCLK_AC (required for CCL)
+// Continuous mode, high speed, asynchronous output for low-latency routing
 
 void ac_init(void) {
     // 1. Clocks — AC is on APBC (not APBB)
@@ -34,15 +34,15 @@ void ac_init(void) {
     AC->SCALER[0].reg = 31;
 
     // 4. Configure COMP0
-    // OUT_SYNC (0x2): synchronized output — required for CCL INSEL=AC.
-    //   OUT=ASYNC (0x1) also works for CCL but output is not clock-aligned.
+    // OUT_ASYNC (0x1): raw comparator output. Required for low-latency DFF/CCL use.
+    //   OUT_SYNC (0x2) also works for CCL but adds GCLK_AC-domain latency.
     //   OUT=OFF (0x0) prevents CCL from reading the comparator.
     // Configure all bits before enabling the comparator.
     AC->COMPCTRL[0].reg =
         AC_COMPCTRL_MUXPOS_PIN1       // AIN1 as positive input
         | AC_COMPCTRL_MUXNEG_VSCALE   // VDD scaler as negative input
         | AC_COMPCTRL_SPEED_HIGH       // fastest response (~40 ns propagation)
-        | AC_COMPCTRL_OUT_SYNC;        // sync output to GCLK_AC edges
+        | AC_COMPCTRL_OUT_ASYNC;       // raw output, not retimed by GCLK_AC
 
     // 5. Enable AC global, then individual comparator
     AC->CTRLA.reg |= AC_CTRLA_ENABLE;
@@ -76,7 +76,7 @@ AC->COMPCTRL[1].reg =
     | AC_COMPCTRL_SINGLE            // single-shot mode
     | AC_COMPCTRL_INTSEL_EOC        // interrupt at end of comparison
     | AC_COMPCTRL_SPEED_HIGH
-    | AC_COMPCTRL_OUT_SYNC;
+    | AC_COMPCTRL_OUT_ASYNC;
 AC->COMPCTRL[1].reg |= AC_COMPCTRL_ENABLE;
 while (AC->SYNCBUSY.reg & AC_SYNCBUSY_COMPCTRL1);
 
@@ -101,6 +101,11 @@ Controls what signal reaches the CMP[x] I/O pin and — critically — what the 
 
 **For CCL INSEL=AC, OUT must be 0x1 or 0x2** (datasheet §40.8.12 note).
 OUT=OFF silently prevents the CCL from seeing the comparator.
+
+**Project rule:** the dual-channel heartbeat/DFF design uses `OUT_ASYNC` only.
+`OUT_SYNC` was measured to add up to two `GCLK_AC` cycles of lag on the Rev F
+board and is unacceptable for that sampling path. `GCLK_AC` is still required by
+the AC peripheral for register/status operation before use.
 
 **Latency:**
 - `OUT_ASYNC`: only comparator propagation delay (see Electrical Characteristics;
@@ -142,12 +147,12 @@ AC->SCALER[1].reg = 20;   // low threshold:  21/64 × VDD
 
 AC->COMPCTRL[0].reg =
     AC_COMPCTRL_MUXPOS_PIN0 | AC_COMPCTRL_MUXNEG_VSCALE
-    | AC_COMPCTRL_OUT_SYNC | AC_COMPCTRL_ENABLE;
+    | AC_COMPCTRL_OUT_ASYNC | AC_COMPCTRL_ENABLE;
 while (AC->SYNCBUSY.reg & AC_SYNCBUSY_COMPCTRL0);
 
 AC->COMPCTRL[1].reg =
     AC_COMPCTRL_MUXPOS_PIN0 | AC_COMPCTRL_MUXNEG_VSCALE
-    | AC_COMPCTRL_OUT_SYNC | AC_COMPCTRL_ENABLE;
+    | AC_COMPCTRL_OUT_ASYNC | AC_COMPCTRL_ENABLE;
 while (AC->SYNCBUSY.reg & AC_SYNCBUSY_COMPCTRL1);
 
 AC->WINCTRL.reg = AC_WINCTRL_WEN0;
@@ -210,6 +215,8 @@ Range: VDD/64 (VALUE=0) to VDD (VALUE=63). VALUE=31 → VDD/2.
   a SYNCBUSY wait when written while the comparator is disabled.
 - **For CCL INSEL=AC: `COMPCTRLn.OUT` must be 0x1 (ASYNC) or 0x2 (SYNC).**
   OUT=0x0 (OFF) prevents the CCL from reading the comparator output.
+- Project heartbeat/DFF path: use `OUT_ASYNC` only. Do not use `OUT_SYNC` in
+  that path; its measured latency is too high for the external sampling edge.
 - OUT_SYNC: CLK_AC-synchronized output (§40.6.9). Internally uses a **2-FF synchronizer**
   (not documented in datasheet; experimentally verified on Rev F). Latency = **1–2
   GCLK_AC periods** with FLEN=OFF (1 period if crossing just before edge; 2 periods
@@ -228,6 +235,9 @@ Range: VDD/64 (VALUE=0) to VDD (VALUE=63). VALUE=31 → VDD/2.
   on edge detection, GCLK_AC starts temporarily to register events/interrupts.
   Filtering must be disabled (`FLEN=OFF`) in this configuration.
 - INTREF (MUXNEG=0x6): internal bandgap reference; voltage level set by SUPC.VREF.SEL.
+  Current errata 1.5.6 can generate a spurious COMP interrupt when enabling AC
+  with `MUXNEG=INTREF`; prefer `VSCALE` when suitable or clear/ignore the first
+  COMP interrupt after enable.
 
 ## Interrupt Sources
 

@@ -4,7 +4,7 @@ type: source
 tags: [peripheral, address, gclk, apb, ahb, events, dma, samc21, datasheet]
 sources: [samc21-datasheet-ch12-peripherals-config]
 created: 2026-05-05
-updated: 2026-05-05
+updated: 2026-05-18
 ---
 
 # SAMC21 Datasheet Ch.12 Peripherals Configuration Summary
@@ -89,14 +89,15 @@ All APB-C clocks are **disabled at reset** — must be enabled in `MCLK->APBCMAS
 | ADC0 | 0x42004400 | 25 | 17 | 33 | 42: RESRDY |
 | ADC1 | 0x42004800 | 26 | 18 | 34 | 43: RESRDY |
 | SDADC | 0x42004C00 | 29 | 19 | 35 | 44: RESRDY |
-| AC | 0x42005000 | 27 | 20 | 40 (N) / 34 (E/G/J) | — |
+| AC | 0x42005000 | 27 | 20 | 40 on ATSAMC21J18A (`AC_GCLK_ID`) | — |
 | DAC | 0x42005400 | 28 | 21 | 36 | 45: EMPTY |
 | PTC | 0x42005800 | 30 | 22 | 37 | EOC: 46, WCOMP: 47, SEQ: 48 |
 | CCL | 0x42005C00 | — | 23 | 38 | — |
 
-Note: AC GCLK PCHCTRL index differs between N-series (40) and E/G/J (34+) due to
-N-series Bridge D peripherals occupying additional PCHCTRL slots. Verify with
-device CMSIS header (`AC_GCLK_ID` / `AC_GCLK_ID_DIG` macros).
+Note: for the target ATSAMC21J18A, the local CMSIS header defines
+`AC_GCLK_ID = 40`. Do not use the older wiki value `PCHCTRL[34]` or the old
+ADC1-clock workaround for this project. If targeting a different device/package,
+verify the generated CMSIS `AC_GCLK_ID` macro before writing `PCHCTRL`.
 
 ## AHB-APB Bridge D Peripherals (SAM C21 N only)
 

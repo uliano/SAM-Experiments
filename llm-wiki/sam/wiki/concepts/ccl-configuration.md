@@ -4,7 +4,7 @@ type: concept
 tags: [ccl, logic, lut, samc21]
 sources: [samc21-datasheet-ch37-ccl, samc21-errata]
 created: 2026-05-06
-updated: 2026-05-07
+updated: 2026-05-18
 ---
 
 # CCL Configuration
@@ -15,17 +15,17 @@ on the SAMC21, providing four programmable Look-Up Tables (LUT0–LUT3).
 ## Quick-Start Checklist
 
 1. Enable APB clock: `MCLK->APBCMASK.reg |= MCLK_APBCMASK_CCL`
-2. Enable GCLK if filter/edge/sequential/events needed: PCHCTRL[38]
-3. Disable CCL before configuring: `CCL->CTRL.reg = 0` (ENABLE=0)
-4. Write LUTCTRLn registers (ENABLE bit off) for each LUT
-5. Enable CCL: `CCL->CTRL.reg = CCL_CTRL_ENABLE`
-6. Enable each LUT: set LUTCTRLn.ENABLE=1 (requires CTRLA.ENABLE=1 first)
+2. Enable GCLK if filter/edge/sequential/events needed: `PCHCTRL[CCL_GCLK_ID]`
+3. Disable CCL before configuring: `CCL->CTRL.reg = 0`
+4. Write `SEQCTRLx` and full `LUTCTRLn` values while `CTRL.ENABLE=0`
+5. Include `LUTCTRLn.ENABLE` in the full `LUTCTRLn` write for active LUTs
+6. Enable CCL last: `CCL->CTRL.reg = CCL_CTRL_ENABLE`
 
 ## Registers
 
 | Register | Offset | Description |
 |----------|--------|-------------|
-| CTRLA | 0x00 | CCL enable and software reset |
+| CTRL | 0x00 | CCL enable and software reset |
 | SEQCTRL | 0x04 | Sequential circuit selection |
 | LUTCTRL0 | 0x08 | LUT0 full configuration (32-bit) |
 | LUTCTRL1 | 0x0C | LUT1 full configuration |
@@ -46,9 +46,9 @@ GCLK PCHCTRL index: **38**
 | 0x3 | EVENT | EVSYS event input (LUTEI=1 required) |
 | 0x4 | IO | I/O pin, function I |
 | 0x5 | AC | AC comparator, fixed mapping (see below) |
-| 0x6 | TC | TC WO output (see errata for actual mapping) |
-| 0x7 | ALTTC | Alternative TC WO (see errata for actual mapping) |
-| 0x8 | TCC | **Functional on SAMC21J18A** (confirmed experimentally). Routes TCC WO[0] to the LUT. The INSEL slot (IN[0]/IN[1]/IN[2]) does NOT select a different WO channel — all slots receive the same WO[0]. See TCC→LUT mapping below. |
+| 0x6 | TC | TC WO output (see TC mapping below) |
+| 0x7 | ALTTC | Alternative TC WO (see TC mapping below) |
+| 0x8 | TCC | Functional on SAMC21J18A and now present in the datasheet: LUT0=TCC0, LUT1=TCC1, LUT2=TCC2, LUT3=TCC0. The input slot selects WO[0]/WO[1]/WO[2]. See TCC→LUT mapping below. |
 | 0x9 | SERCOM | SERCOM data output |
 
 ## AC Input Mapping (Fixed, Non-Selectable)
@@ -66,8 +66,9 @@ to a CCL function-I input pin (PCB trace), or (b) use LINK if the logic allows.
 
 ## TC Input Mapping
 
-Errata 1.8.3 (TC selection reversed) was **Rev A only — annulled on Rev F**.
-The datasheet mapping is correct on our hardware.
+Older errata 1.8.3 (TC selection reversed) does not affect the target
+SAMC21J18A Rev F according to DS80000740S. Use the current datasheet mapping on
+the target hardware.
 
 | LUT | INSEL=TC | INSEL=ALTTC |
 |-----|----------|-------------|
@@ -78,7 +79,8 @@ The datasheet mapping is correct on our hardware.
 
 ## TCC Input Mapping (INSEL=0x8) — Experimentally Verified on SAMC21J18A
 
-INSEL=TCC (0x8) is functional despite the datasheet marking it reserved on C20/C21.
+INSEL=TCC (0x8) is functional on SAMC21J18A and is present in the current
+datasheet/header mapping for the target.
 
 ### Oscilloscope-Confirmed (direct pin observation, 2026-05-06/07)
 
@@ -174,6 +176,14 @@ SEQCTRL.SEQSEL0 = pair LUT0+LUT1; SEQCTRL.SEQSEL1 = pair LUT2+LUT3.
 > **Errata 1.7.1**: RS latch reset is non-functional on rev A. Workaround:
 > disable the LUT (LUTCTRLn.ENABLE=0) to clear the latch state.
 
+Current DS80000740S Rev-F-relevant CCL errata:
+
+| # | Issue | Local rule |
+|---|---|---|
+| 1.7.2 | Sequential logic can remain under reset after disabling/re-enabling LUT0/LUT2 to clear a latch/FF | If sequential CCL is used, write `CTRL.ENABLE` again after re-enabling the LUT |
+| 1.7.3 | `SEQCTRLx` and `LUTCTRLx` are protected by `CTRL.ENABLE` | Configure all `SEQCTRLx`/`LUTCTRLn` while `CCL->CTRL.ENABLE=0`; set global enable last |
+| 1.7.4 | Writing `CTRL.SWRST` triggers a PAC protection error | Avoid CCL software reset in production paths |
+
 ## Event System
 
 | Generator | EVSYS index | Description |
@@ -195,22 +205,23 @@ MCLK->APBCMASK.reg |= MCLK_APBCMASK_CCL;
 // Disable CCL
 CCL->CTRL.reg = 0;
 
-// Configure LUT0: AC0?WO0:WO1 — TRUTH=0xCA
+// Configure LUT0: AC0?WO0:WO1 — TRUTH=0xCA.
+// Because of errata 1.7.3, include LUTCTRL.ENABLE before CCL->CTRL.ENABLE.
 CCL->LUTCTRL[0].reg =
     (0xCAu << CCL_LUTCTRL_TRUTH_Pos) |
     (0x5u  << CCL_LUTCTRL_INSEL2_Pos) |  // INSEL2 = AC (COMP0)
     (0x4u  << CCL_LUTCTRL_INSEL1_Pos) |  // INSEL1 = IO (WO0 via pin)
-    (0x4u  << CCL_LUTCTRL_INSEL0_Pos);   // INSEL0 = IO (WO1 via pin)
+    (0x4u  << CCL_LUTCTRL_INSEL0_Pos) |  // INSEL0 = IO (WO1 via pin)
+    CCL_LUTCTRL_ENABLE;
 
-// Enable CCL, then enable LUT0
+// Enable CCL after all SEQCTRL/LUTCTRL writes
 CCL->CTRL.reg = CCL_CTRL_ENABLE;
-CCL->LUTCTRL[0].reg |= CCL_LUTCTRL_ENABLE;
 ```
 
 ## See Also
 
 - [[SAMC21 Datasheet Ch.37 CCL]]
-- [[SAMC21 Errata]]
+- [[SAMC20/C21 Errata (DS80000740S)]]
 - [[AC Configuration]]
 - [[TCC Configuration]]
 - [[TC 32-Bit Paired Mode]]

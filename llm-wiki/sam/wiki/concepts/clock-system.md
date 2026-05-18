@@ -4,7 +4,7 @@ type: concept
 tags: [clock, oscctrl, gclk, mclk, osc48m, xosc, samc21]
 sources: [firmware-core-library, application-bring-up, samc21-datasheet-ch16-gclk, samc21-datasheet-ch17-mclk]
 created: 2026-05-05
-updated: 2026-05-05
+updated: 2026-05-18
 ---
 
 # Clock System
@@ -62,10 +62,14 @@ PCHCTRL IDs for common peripherals (from `samc21j18a.h`):
 |------------|---------------------|
 | SERCOM0 | `SERCOM0_GCLK_ID_CORE` |
 | SERCOM5 | `SERCOM5_GCLK_ID_CORE` |
+| TCC0/TCC1 | `TCC0_GCLK_ID` |
+| TCC2 | `TCC2_GCLK_ID` |
 | TC0/TC1 | `TC0_GCLK_ID` |
 | TC2/TC3 | `TC2_GCLK_ID` |
 | ADC0 | `ADC0_GCLK_ID` |
 | ADC1 | `ADC1_GCLK_ID` |
+| CCL | `CCL_GCLK_ID` |
+| AC | `AC_GCLK_ID` = 40 on ATSAMC21J18A |
 
 ## APB Bus Clocks (MCLK)
 

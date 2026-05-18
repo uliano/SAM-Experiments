@@ -4,7 +4,7 @@ type: source
 tags: [ccl, logic, lut, samc21, datasheet]
 sources: [samc21-datasheet-ch37-ccl]
 created: 2026-05-06
-updated: 2026-05-06
+updated: 2026-05-18
 ---
 
 # SAMC21 Datasheet Ch.37 CCL
@@ -25,9 +25,9 @@ the Event System to route outputs and synchronize across peripherals.
 - **TRUTH register**: 8-bit value; output = bit `{IN[2],IN[1],IN[0]}` of TRUTH.
 - **Base address**: 0x42005C00 (APB-C bridge).
 - **APB mask**: MCLK_APBCMASK_CCL — disabled at reset; must enable explicitly.
-- **GCLK**: PCHCTRL[38]. Required only for filter/edge/sequential/event features;
+- **GCLK**: `CCL_GCLK_ID = 38`. Required only for filter/edge/sequential/event features;
   pure combinational operation requires no GCLK.
-- **CTRLA** (offset 0x00): SWRST[0], ENABLE[1]. Enable-protected for LUTs.
+- **CTRL** (offset 0x00): SWRST[0], ENABLE[1]. Enable-protected for LUTs.
 - **SEQCTRL** (offset 0x04): sequential circuit selection per LUT pair (0/1 and 2/3).
   Values: 0x0=disabled, 0x1=D latch, 0x2=D FF, 0x3=JK FF, 0x4=RS latch.
 - **LUTCTRLn** (offset 0x08+4n, 32-bit): configures each LUT fully.
@@ -59,7 +59,7 @@ the Event System to route outputs and synchronize across peripherals.
 | 0x5 | AC | Analog Comparator output — fixed mapping per LUT (see below) |
 | 0x6 | TC | TC WO output — datasheet says TC0/TC1/TC2/TC3 for LUT0/1/2/3 |
 | 0x7 | ALTTC | Alternative TC — datasheet says TC1/TC2/TC3/TC4 for LUT0/1/2/3 |
-| 0x8 | TCC | Datasheet says reserved on C20/C21 — **experimentally confirmed functional on SAMC21J18A**. Routes TCC WO[0] to the LUT input. All three INSEL slots (IN[0]/IN[1]/IN[2]) receive the same WO[0]; different WO channels of the same TCC cannot be selected this way. See [[CCL Configuration]] for the full verified mapping. |
+| 0x8 | TCC | TCC waveform output. On SAMC21J18A: LUT0=TCC0, LUT1=TCC1, LUT2=TCC2, LUT3=TCC0. The input slot selects WO[0]/WO[1]/WO[2]. See [[CCL Configuration]] for the verified mapping. |
 | 0x9 | SERCOM | SERCOM data output |
 | 0xA | ALT2TC | N-series only |
 | 0xB | ASYNCEVENT | N-series only |
@@ -76,7 +76,7 @@ the Event System to route outputs and synchronize across peripherals.
 This mapping is **fixed** in hardware — it is not selectable. COMP0/COMP1 cannot
 be routed into LUT2/LUT3 via INSEL=AC.
 
-### INSEL=TC Mapping (per Datasheet — see Errata 1.8.3)
+### INSEL=TC Mapping
 
 | LUT | INSEL=TC | INSEL=ALTTC |
 |-----|----------|-------------|
@@ -85,9 +85,8 @@ be routed into LUT2/LUT3 via INSEL=AC.
 | LUT2 | TC2 | TC3 |
 | LUT3 | TC3 | TC4 |
 
-> **WARNING — Errata 1.8.3**: On rev A silicon the actual hardware mapping is
-> TC4/TC0/TC1/TC2 for INSEL=TC and TC0/TC1/TC2/TC3 for INSEL=ALTTC.
-> See [[SAMC21 Errata]] for details.
+Older errata 1.8.3 described a reversed TC mapping on early silicon. According
+to the current DS80000740S pass, it is not a target Rev-F constraint.
 
 ### LINK Direction
 
@@ -139,10 +138,13 @@ LUT event input (LUTEI) is an EVSYS user. LUTEO enables the output as a generato
 
 ### CCL I/O Pin Assignments (Function I)
 
-CCL inputs use peripheral function I in the PORT PMUX table. TCC/TC outputs use
-function E or F. These are **different functions** — the same pin cannot serve
-both simultaneously. PCB routing is required to bring TCC WO signals back to
-CCL input pins.
+CCL external inputs use peripheral function I in the PORT PMUX table. TCC/TC
+pin outputs use function E or F. These are different functions: the same pad
+cannot serve as both a timer output pin and a CCL external input pin.
+
+PCB routing is required only when a timer pin output must be consumed through
+`INSEL=IO`. `INSEL=TCC` routes the supported TCC waveform outputs internally and
+does not need a PCB loopback.
 
 > TBD: exact function-I pin assignments for LUT0–LUT3 IN[0..2] (from Table 6-2).
 
@@ -151,8 +153,9 @@ CCL input pins.
 SEQCTRL.SEQSEL0 controls LUT0/LUT1 pair; SEQCTRL.SEQSEL1 controls LUT2/LUT3.
 With RS latch (0x4): LUT0.OUT = Set, LUT1.OUT = Reset (for pair 0).
 
-> **Errata 1.7.1**: RS latch reset function is non-functional on rev A silicon.
-> Workaround: disable the LUT to clear the latch. See [[SAMC21 Errata]].
+Current Rev-F-relevant errata: configure `SEQCTRLx` and `LUTCTRLn` while
+`CCL->CTRL.ENABLE=0`, then enable `CCL->CTRL` last. Avoid `CTRL.SWRST` in
+production paths. See [[SAMC20/C21 Errata (DS80000740S)]].
 
 ## Entities Mentioned
 
@@ -175,7 +178,7 @@ With RS latch (0x4): LUT0.OUT = Set, LUT1.OUT = Reset (for pair 0).
 ## See Also
 
 - [[CCL Configuration]]
-- [[SAMC21 Errata]]
+- [[SAMC20/C21 Errata (DS80000740S)]]
 - [[AC Configuration]]
 - [[EVSYS]]
 - [[I/O Multiplexing]]

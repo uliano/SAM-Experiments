@@ -2,9 +2,9 @@
 title: EVSYS
 type: concept
 tags: [evsys, events, dma, timer, firmware, samc21]
-sources: [samc21-datasheet-ch29-evsys]
+sources: [samc21-datasheet-ch29-evsys, samc21-errata]
 created: 2026-05-05
-updated: 2026-05-05
+updated: 2026-05-18
 ---
 
 # EVSYS
@@ -21,10 +21,7 @@ synchronous paths.
 // 1. APB clock for EVSYS
 MCLK->APBCMASK.reg |= MCLK_APBCMASK_EVSYS;
 
-// 2. GCLK for channel 0 (needed for sync/resync path)
-GCLK->PCHCTRL[EVSYS_GCLK_ID_0].reg = GCLK_PCHCTRL_GEN_GCLK0
-                                     | GCLK_PCHCTRL_CHEN;
-while (!(GCLK->PCHCTRL[EVSYS_GCLK_ID_0].reg & GCLK_PCHCTRL_CHEN));
+// 2. No EVSYS channel GCLK for this route: ADC events must use async path.
 
 // 3. Configure generator peripheral: TC0 generates overflow event
 TC0->COUNT16.EVCTRL.reg |= TC_EVCTRL_OVFEO;
@@ -33,10 +30,10 @@ TC0->COUNT16.EVCTRL.reg |= TC_EVCTRL_OVFEO;
 //    USERm.CHANNEL = channel_number + 1
 EVSYS->USER[28].reg = EVSYS_USER_CHANNEL(0 + 1);
 
-// 5. Configure channel 0: TC0 OVF generator, synchronous, rising edge
+// 5. Configure channel 0: TC0 OVF generator, asynchronous path
 EVSYS->CHANNEL[0].reg = EVSYS_CHANNEL_EVGEN(0x34)   // TC0 OVF
-                       | EVSYS_CHANNEL_PATH_SYNCHRONOUS
-                       | EVSYS_CHANNEL_EDGSEL_RISING_EDGE;
+                       | EVSYS_CHANNEL_PATH_ASYNCHRONOUS
+                       | EVSYS_CHANNEL_EDGSEL_NO_EVT_OUTPUT;
 
 // 6. Configure user peripheral: ADC0 starts on event
 ADC0->EVCTRL.reg |= ADC_EVCTRL_STARTEI;
@@ -136,10 +133,15 @@ EVSYS->CHANNEL[0].reg = EVSYS_CHANNEL_EVGEN(0x03)  // RTC ALARM0
 ## Key Facts
 
 - USERm.CHANNEL = channel_number + 1 (0 = disconnected, 1 = ch0, 12 = ch11).
-- Always write USER before configuring CHANNELn.
+- Always write USER before configuring CHANNELn; this is the datasheet §29.6.2.2
+  initialization order.
 - CHANNELn must be written as a single 32-bit word.
 - CHSTATUS.USRRDYn resets to 0xFF — do not rely on it as a "connected" indicator.
 - Asynchronous path generates no INTFLAG.EVDn or OVRn flags — use for fire-and-forget.
+- ADC event users must use `PATH_ASYNCHRONOUS` on the target Rev F silicon;
+  current errata 1.4.4 affects synchronized ADC events.
+- TCC event users must use `PATH_ASYNCHRONOUS` on the target Rev F silicon; current
+  errata 1.21.9 says TCC is not compatible with EVSYS `SYNC` or `RESYNC` mode.
 - EVSYS is always enabled; use CTRLA.SWRST = 1 to reset all channels.
 - CHANNELn resets to 0x00008000 (ONDEMAND=1) — GCLK requested on demand by default.
 

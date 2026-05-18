@@ -18,20 +18,22 @@ Critical differences from the N-variant that affect firmware design:
   Available ≥24-bit counters: TCC0 (24-bit), TCC1 (24-bit), TC0+TC1 (32-bit).
 - **TCC widths**: TCC0=24-bit, TCC1=24-bit, TCC2=**16-bit** only.
 - **CCL**: INSEL=ALT2TC (0xA) and INSEL=ASYNCEVENT (0xB) are N-series only (absent
-  from SAMC21J18A CMSIS header). INSEL=TCC (0x8): datasheet marks it reserved on
-  C20/C21, but CMSIS header defines it as "TCC input source" — likely functional,
-  needs experimental verification. TCC→LUT mapping unknown.
-- **AC clock errata (rev A only)**: GCLK_AC non-functional — but **annulled on
-  our hardware**. Verified: DSU.DID=0x11010500 → Rev F (REVISION=0x5). All errata
-  in DS80000740B were fixed by Rev E; Rev F is clean. Use GCLK_AC normally.
+  from SAMC21J18A CMSIS header). INSEL=TCC (0x8) is valid for the current target:
+  LUT0=TCC0, LUT1=TCC1, LUT2=TCC2, LUT3=TCC0; input slot selects WO[0]/WO[1]/WO[2].
+- **Errata source**: use current DS80000740S. Rev F is not clean; relevant active
+  issues include CCL 1.7.2/1.7.3/1.7.4, EVSYS 1.12.1/1.12.3/1.12.4, ADC 1.4.4,
+  AC 1.5.6, and TCC 1.21.9.
+- **AC path**: enable `GCLK_AC` normally with `AC_GCLK_ID=40`, but the heartbeat
+  DFF path must use `OUT_ASYNC`. `OUT_SYNC` was measured to add up to two
+  `GCLK_AC` cycles of lag and is not acceptable for that path.
 - **Port C**: absent on J-variant. Only PA (Port A) and PB (Port B) available.
 - **GCLK IDs**: TCC0+TCC1 share PCHCTRL[**28**]; TCC2 = PCHCTRL[29];
   TC0+TC1 = PCHCTRL[30]; TC2+TC3 = PCHCTRL[31]; TC4 = PCHCTRL[32];
-  CCL = PCHCTRL[38]; AC = PCHCTRL[**40**] (AC_GCLK_ID=40 per CMSIS instance/ac.h;
-  the old note "PCHCTRL[34] non-functional, use ADC1=[36]" was Rev A errata only —
-  annulled on Rev F; use AC_GCLK_ID macro, which resolves to 40).
-- **TC2+TC3**: errata §35.6.2.4 warns against use; avoid in new designs even
-  though TC2 in COUNT32 mode has been observed to work experimentally.
+  CCL = PCHCTRL[38]; AC = PCHCTRL[**40**] (`AC_GCLK_ID=40` per CMSIS `instance/ac.h`).
+  The old note "PCHCTRL[34] non-functional, use ADC1=[36]" is not a current Rev-F rule.
+- **TC2+TC3**: COUNT32 has been observed functional locally. Keep it in board
+  qualification for designs that depend on it, but do not cite older notes as a
+  current DS80000740S Rev-F prohibition.
 
 See `llm-wiki/sam/wiki/concepts/ccl-configuration.md` and
 `llm-wiki/sam/wiki/sources/samc21-errata.md` for full errata details.

@@ -4,13 +4,14 @@ type: analysis
 tags: [ac, ccl, tcc, tc, evsys, architecture, multislope, samc21j18a]
 sources: [samc21-datasheet-ch37-ccl, samc21-datasheet-ch40-ac, samc21-datasheet-ch35-tc, samc21-datasheet-ch36-tcc, samc21-datasheet-ch29-evsys]
 created: 2026-05-10
-updated: 2026-05-10
+updated: 2026-05-18
 ---
 
 # Dual-Channel AC+CCL+TC Architecture
 
 > **DEPRECATED** — moved to `SAM-Experiments/design-dual-channel.md` (project root).
-> This copy is out of date. Do not edit here.
+> This copy is out of date. Do not use it for current errata or AC output
+> decisions; see [[SAMC20/C21 Errata (DS80000740S)]] and [[AC Configuration]].
 
 Design document for a two-channel analog front-end using AC comparators, CCL LUTs,
 and 32-bit TC pairs on the ATSAMC21J18A-AU. Each channel captures the high-time
@@ -78,7 +79,7 @@ in the AND gate and providing a clean signal for TC counting.
 |-----------|--------|-----------|---------|
 | GCLK0 | OSC48M | 48 MHz | CPU, CCL |
 | GCLK1 | XOSC | 24 MHz | TCC0, TCC1 |
-| GCLK2 | XOSC/64 | 375 kHz | AC (if OUT_SYNC needed) |
+| GCLK2 | XOSC/64 | 375 kHz | Historical only; current design uses AC `OUT_ASYNC`, not `OUT_SYNC` |
 
 ### TCC0 "Heartbeat" — PCHCTRL[28], GCLK1=24 MHz
 

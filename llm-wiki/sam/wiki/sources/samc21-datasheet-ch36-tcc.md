@@ -2,9 +2,9 @@
 title: SAMC21 Datasheet Ch.36 TCC
 type: source
 tags: [tcc, timer, pwm, capture, samc21, datasheet]
-sources: [samc21-datasheet-ch36-tcc]
+sources: [samc21-datasheet-ch36-tcc, samc21-errata]
 created: 2026-05-05
-updated: 2026-05-05
+updated: 2026-05-18
 ---
 
 # SAMC21 Datasheet Ch.36 TCC
@@ -43,6 +43,8 @@ interrupt integration covers overflow, compare match, capture, and fault conditi
 - Master/slave synchronization: CTRLA.MSYNC=1 on slave links its CC channels to the
   master TCC counter (both must share the same GCLK_TCC).
 - RUNSTDBY=1: TCC continues running in standby.
+- Errata DS80000740S 1.21.9: use EVSYS `PATH_ASYNCHRONOUS` with TCC; SYNC/RESYNC
+  EVSYS modes are not compatible on the target Rev F silicon.
 
 ## Prescaler
 

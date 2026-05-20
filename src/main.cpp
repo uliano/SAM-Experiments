@@ -14,8 +14,8 @@ int main(void)
     QuartzTest::init();
     QuartzTest::report_once();
 
-    // Tcc1CountevTest::run();
-    AcClockProbeTest::run();
+    Tcc1CountevTest::run();
+    //AcClockProbeTest::run();
 
     for (;;)
         __WFI();

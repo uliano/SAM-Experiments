@@ -72,10 +72,11 @@ static inline void run(void)
     TCC0->EVCTRL.reg = TCC_EVCTRL_OVFEO;
 
     // EVSYS CH0: ASYNC, TCC0_OVF (gen=35) → TCC1_EV0 (user=15).
+    // §29.6.2.2 requires USER written before CHANNEL.
+    EVSYS->USER[EVSYS_ID_USER_TCC1_EV_0].reg = EVSYS_USER_CHANNEL(1); // ch0+1
     EVSYS->CHANNEL[0].reg =
         EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_TCC0_OVF) |
         EVSYS_CHANNEL_PATH_ASYNCHRONOUS;
-    EVSYS->USER[EVSYS_ID_USER_TCC1_EV_0].reg = EVSYS_USER_CHANNEL(1); // ch0+1
 
     // TCC1: NFRQ, DIV1, PER=max 24-bit (no overflow in window), COUNTEV EV0.
     TCC1->CTRLA.reg = TCC_CTRLA_SWRST;

@@ -95,6 +95,7 @@ Required external fanout for `HB_1_2`:
 | PA10 `TCC0/WO2` | DFF_B.CLK |
 | PA10 `TCC0/WO2` | PB10 `CCL_IN5`, used by LUT1 IN2 |
 | PA10 `TCC0/WO2` | PA24 `CCL_IN8`, used by LUT2 IN2 |
+| PA10 `TCC0/WO2` | PA11 `EIC/EXTINT[11]`, used by TCC1 window counter (see §6) |
 
 ### Channel A
 
@@ -132,9 +133,11 @@ ADC0 plus ADC1.
 | XOSC | 24 MHz crystal on PA14/PA15 |
 | GCLK0 | 48 MHz OSC48M, CPU and CCL |
 | GCLK1 | 24 MHz XOSC, TCC0/TCC1 |
+| GCLK3 | 12 MHz OSC48M/4, dedicated to EIC sync edge detection (see §6) |
 | GCLK_AC | Use GCLK0 for AC register/status operation; comparator output path remains asynchronous |
 | TCC0 | Heartbeat PWM generator |
-| TCC1 | Common window counter, event-counting TCC0 overflow events |
+| TCC1 | Common window counter, event-counting `HB_1_2` rising edges via EIC |
+| EIC EXTINT[11] | PA11 input, sync rising-edge detect on `HB_1_2` loopback; feeds TCC1 (see §6) |
 | AC COMP0 | Channel A comparator, PA05 positive input |
 | AC COMP1 | Channel B comparator, PA06 positive input |
 | CCL LUT0 | Channel A reference mux |
@@ -143,7 +146,7 @@ ADC0 plus ADC1.
 | CCL LUT3 | Channel B reference mux |
 | TC0+TC1 | Channel A 32-bit event counter |
 | TC2+TC3 | Channel B 32-bit event counter |
-| EVSYS CH0 | TCC0 overflow to TCC1 event input 0 |
+| EVSYS CH0 | EIC EXTINT[11] (=`HB_1_2` rising edges) to TCC1 event input 0 |
 | EVSYS CH1 | CCL LUTOUT1 to TC0 event input |
 | EVSYS CH2 | CCL LUTOUT2 to TC2 event input |
 
@@ -188,30 +191,88 @@ PA08 mux I = CCL_IN3   (DFF_A.Q input; HB_1_8 has no physical output)
 
 ## 6. TCC1 Window Counter Procedure
 
-Use TCC1 as a heartbeat-period event counter. It counts TCC0 overflow events,
-not 24 MHz ticks.
+Use TCC1 as a heartbeat-period event counter via EIC sync edge detection on the
+`HB_1_2` loopback. TCC1 counts rising edges on the `HB_1_2` net (one per TCC0
+period, in phase with TCC0 wrap), not 24 MHz ticks.
+
+Why not feed TCC0 OVF directly into TCC1 via EVSYS:
+the TCC0 OVF event is a 1-cycle pulse on GCLK1, and TCC1 also samples on GCLK1.
+The same-clock setup/hold race between the TCC0 OVF Q output and TCC1's EV0
+sampler consistently loses the pulse — empirically `EVACT0=COUNT`,
+`EVACT0=COUNTEV`, and `EVACT0=INC` all read `count=0` after 187500 OVFs.
+Errata DS80000740S 1.21.9 also rules out the EVSYS SYNC/RESYNC path that would
+otherwise clean up the edge. The workaround follows the Microchip-recommended
+pattern (see the `samc21_tcc_gpio_toggle_counter` example): pass the source
+through EIC synchronous edge detection on a slower clock, then route
+asynchronously to the TCC user.
 
 Enable clocks:
 
 ```cpp
 MCLK->APBCMASK.reg |= MCLK_APBCMASK_TCC1;
+MCLK->APBAMASK.reg |= MCLK_APBAMASK_EIC;
 // TCC0_GCLK_ID and TCC1_GCLK_ID are both 28 on SAMC21J18A.
 // The GCLK1 assignment made for TCC0 also clocks TCC1.
+
+// GCLK3 = OSC48M / 4 = 12 MHz, dedicated to EIC. See selection rationale
+// below — must be > 750 kHz (Nyquist on 375 kHz edges) and < 24 MHz (so
+// the EIC sync edge pulse is wider than one TCC1 GCLK1 cycle).
+GCLK->GENCTRL[3].reg =
+    GCLK_GENCTRL_SRC(GCLK_GENCTRL_SRC_OSC48M_Val) |
+    GCLK_GENCTRL_DIV(4) |
+    GCLK_GENCTRL_GENEN;
+while (GCLK->SYNCBUSY.reg & GCLK_SYNCBUSY_GENCTRL_GCLK3);
+GCLK->PCHCTRL[EIC_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN;
+while (!(GCLK->PCHCTRL[EIC_GCLK_ID].reg & GCLK_PCHCTRL_CHEN));
 ```
+
+GCLK_EIC selection rationale:
+
+```text
+EIC sync edge pulse width = 1 / f_GCLK_EIC
+
+Upper bound: pulse must be >= 1 GCLK1 cycle so TCC1 samples it reliably.
+            f_GCLK_EIC <= 24 MHz, with margin pick <= 12 MHz.
+Lower bound: sample rate must satisfy Nyquist on the 375 kHz HB_1_2 edges.
+            f_GCLK_EIC >= 750 kHz.
+
+12 MHz is comfortably inside, gives 83 ns event pulse = 2 GCLK1 cycles.
+```
+
+Configure the EIC EXTINT input pin and EIC itself:
+
+```cpp
+// PA11 mux A = EIC/EXTINT[11], input enabled.  PA11 receives HB_1_2 via
+// the PCB loopback from PA10 documented in §3.
+PORT->Group[0].PINCFG[11].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
+PORT->Group[0].PMUX[5].bit.PMUXO = MUX_PA11A_EIC_EXTINT11;  // = 0
+
+EIC->CTRLA.reg = EIC_CTRLA_SWRST;
+while (EIC->SYNCBUSY.reg & EIC_SYNCBUSY_SWRST);
+EIC->CONFIG[1].reg = EIC_CONFIG_SENSE3_RISE;     // EXTINT[11] = SENSE3 in CONFIG[1]
+EIC->EVCTRL.reg    = EIC_EVCTRL_EXTINTEO(1u << 11);
+EIC->CTRLA.reg     = EIC_CTRLA_ENABLE;
+while (EIC->SYNCBUSY.reg & EIC_SYNCBUSY_ENABLE);
+```
+
+EIC `ASYNCH` stays 0 (synchronous edge detection). The async edge detection
+mode has a known errata on SAMC21 E/G/J devices — only the first edge is
+detected — so sync mode is the correct choice.
 
 EVSYS route:
 
 | EVSYS channel | Generator | User | Path |
 |---:|---:|---:|---|
-| 0 | `EVSYS_ID_GEN_TCC0_OVF` = 35 | `EVSYS_ID_USER_TCC1_EV_0` = 15 | `ASYNC` |
+| 0 | `EVSYS_ID_GEN_EIC_EXTINT_11` = 25 | `EVSYS_ID_USER_TCC1_EV_0` = 15 | `ASYNC` |
 
-`ASYNC` is required here. Current errata DS80000740S section 1.21.9 says TCC is
-not compatible with EVSYS `SYNC` or `RESYNC` mode.
+`ASYNC` is required by errata DS80000740S 1.21.9 (TCC is not compatible with
+EVSYS `SYNC` or `RESYNC` mode). The EIC has already done the edge detection at
+this point, so EVSYS just forwards the resulting pulse combinationally.
 
 ```cpp
 EVSYS->USER[EVSYS_ID_USER_TCC1_EV_0].reg = EVSYS_USER_CHANNEL(1); // channel 0 + 1
 EVSYS->CHANNEL[0].reg =
-    EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_TCC0_OVF) |
+    EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_EIC_EXTINT_11) |
     EVSYS_CHANNEL_PATH_ASYNCHRONOUS;
 ```
 
@@ -223,13 +284,27 @@ TCC1 setup for a window of `N` heartbeat periods:
 | `WAVE.WAVEGEN` | `NFRQ` | No waveform output needed |
 | `PER` | `N - 1` | Direct range: `3 <= N <= 0x1000000` for the prep interrupt below |
 | `CC[0]` | `N - 2` | Prep interrupt at the start of the penultimate interval |
-| `EVCTRL` | `TCEI0 | EVACT0_COUNTEV | OVFEO` | Count heartbeat events and emit window overflow event |
+| `EVCTRL` | `TCEI0 | EVACT0_INC | OVFEO` | Increment on each EIC edge, emit window overflow event |
 | `INTENSET` | `MC0 | OVF` | Compare interrupt plus overflow interrupt |
+
+`EVACT0=INC` (0x4) — one count per received event, prescaler bypassed
+(DS60001479M §36.6.2.3 figure 36-2 "Note: When counting events, the prescaler
+is bypassed"). With `EVACT0 != OFF`, `CTRLA.ENABLE=1` does **not** start the
+counter; an explicit `CTRLBSET.CMD=RETRIGGER` is required to clear
+`STATUS.STOP` before events arrive.
+
+```cpp
+TCC1->CTRLA.reg |= TCC_CTRLA_ENABLE;
+while (TCC1->SYNCBUSY.reg & TCC_SYNCBUSY_ENABLE);
+TCC1->CTRLBSET.reg = TCC_CTRLBSET_CMD_RETRIGGER;
+while (TCC1->SYNCBUSY.reg & TCC_SYNCBUSY_CTRLB);
+```
 
 Operational definition:
 
 ```text
-TCC0 OVF marks the boundary between heartbeat intervals.
+HB_1_2 rising edge marks the boundary between heartbeat intervals — by NPWM
+construction WO[2] rises at the same GCLK1 edge where TCC0 wraps.
 The active intervals in a window are numbered 0 .. N-1.
 MC0 at CC=N-2 means: interval N-2, the penultimate interval, has started.
 OVF means: interval N-1 has ended and the N-period window is closed.
@@ -244,12 +319,16 @@ implementation-timing sensitive.
 TCC1 overflow event is available as generator `EVSYS_ID_GEN_TCC1_OVF` = 42 if a
 downstream peripheral needs a hardware window-boundary event.
 
-> **Note:** TCC1 `COUNTEV` via `PATH_ASYNCHRONOUS` has not been validated on
-> hardware. `TC EVACT_COUNT` via the same async path was confirmed
-> experimentally (§10). TCC `COUNTEV` is architecturally equivalent but
-> requires separate scope validation. Run `Tcc1CountevTest::run()` from
-> `src/tcc1_countev_test.hpp` before committing this path in production
-> firmware.
+Phase alignment: TCC0 wrap and TCC1 increment are bound together by
+construction. WO[2] rising edge is generated at the GCLK1 edge where TCC0
+`COUNT 63 → 0` transitions (NPWM "set on ZERO"). EIC samples on GCLK_EIC and
+emits its event, EVSYS forwards combinationally, TCC1 INC executes within ~3
+GCLK1 cycles of the TCC0 wrap. No software synchronization is needed.
+
+> **Validation status:** path validated by `Tcc1CountevTest::run()` in
+> `src/tcc1_countev_test.hpp`. The test expects ~187500 counts in 500 ms when
+> the PA10→PA11 jumper is in place and reports a directed FAIL message if the
+> jumper is missing (EIC INTFLAG quiet, count=0).
 
 ## 7. AC And ADC Procedure
 
@@ -546,18 +625,32 @@ count CCL pulses and also consume the TCC1 overflow event as a reset trigger.
 
 1. Start OSC48M/GCLK0 as already done by `sys_init()`.
 2. Start the 24 MHz XOSC with timeout and configure `GCLK1`.
-3. Enable APB masks for EVSYS, TCC0, TCC1, TC0, TC1, TC2, TC3, AC, CCL, ADC0.
-4. Configure generic clocks for TCC0/TCC1, TC0/TC2, AC, and CCL.
-5. Configure all pins before enabling their peripheral outputs.
-6. Configure TCC0 heartbeat, including `OVFEO`.
-7. Configure EVSYS channel 0 from TCC0 OVF to TCC1 EV0: write `USER`, then `CHANNEL`.
-8. Configure TCC1 window counter, but leave it disabled until counters are reset.
-9. Configure AC COMP0/COMP1 as `OUT_ASYNC` and verify `READY0/READY1`.
-10. Configure CCL LUT0..LUT3 with `CTRL.ENABLE=0`; include `LUTEO` on LUT1/LUT2.
-11. Configure EVSYS channels 1 and 2 from CCL LUTOUT1/2 to TC0/TC2: write `USER`, then `CHANNEL`.
-12. Configure TC0+TC1 and TC2+TC3 as COUNT32 event counters and reset counts.
-13. Enable CCL, TCs, TCC1, then TCC0 in a deterministic order for the first test.
-14. Enable `TCC1_IRQn`; in the handler service `MC0` and `OVF` separately.
+3. Configure `GCLK3` = OSC48M/4 = 12 MHz for EIC sync edge detection (§6).
+4. Enable APB masks: APBA for EIC; APBC for EVSYS, TCC0, TCC1, TC0..TC3, AC,
+   CCL, ADC0.
+5. Configure generic clock channels: `PCHCTRL[TCC0_GCLK_ID]=GCLK1`,
+   `PCHCTRL[TC0_GCLK_ID]=GCLK0`, `PCHCTRL[TC2_GCLK_ID]=GCLK0`,
+   `PCHCTRL[AC_GCLK_ID]=GCLK0`, `PCHCTRL[CCL_GCLK_ID]=GCLK0`,
+   `PCHCTRL[EIC_GCLK_ID]=GCLK3`.
+6. Configure all pins before enabling their peripheral outputs. Include
+   PA11 mux A (EIC/EXTINT[11], INEN=1) for the `HB_1_2` loopback.
+7. Configure TCC0 heartbeat (`CC[0]/CC[1]/CC[2]`, `OVFEO` optional — not
+   used by TCC1 anymore but available for other downstream consumers).
+8. Configure EIC: sync rising-edge detect on EXTINT[11], event output
+   enabled, then `CTRLA.ENABLE=1`.
+9. Configure EVSYS channel 0 from EIC EXTINT[11] to TCC1 EV0: write
+   `USER`, then `CHANNEL`.
+10. Configure TCC1 window counter (`EVACT0=INC`), but leave it disabled
+    until counters are reset.
+11. Configure AC COMP0/COMP1 as `OUT_ASYNC` and verify `READY0/READY1`.
+12. Configure CCL LUT0..LUT3 with `CTRL.ENABLE=0`; include `LUTEO` on LUT1/LUT2.
+13. Configure EVSYS channels 1 and 2 from CCL LUTOUT1/2 to TC0/TC2: write
+    `USER`, then `CHANNEL`.
+14. Configure TC0+TC1 and TC2+TC3 as COUNT32 event counters and reset counts.
+15. Enable CCL, TCs, TCC1, then TCC0 in a deterministic order for the first
+    test. After TCC1 `ENABLE=1` issue `CTRLBSET.CMD=RETRIGGER` to clear
+    `STATUS.STOP` (required because `EVACT0 != OFF`).
+16. Enable `TCC1_IRQn`; in the handler service `MC0` and `OVF` separately.
 
 ## 12. Bring-Up Validation Checklist
 
@@ -565,7 +658,7 @@ Scope checks, in order:
 
 1. PA09 and PA10 show 375 kHz waveforms at 7/8 and 1/2 duty. PA08 is CCL_IN3 (DFF_A.Q
    input); HB_1_8 has no physical output pin.
-2. PA10 loopback appears on PB10 and PA24 as valid CCL input levels.
+2. PA10 loopback appears on PB10, PA24, **and PA11** as valid digital input levels.
 3. PA12 follows COMP0 and PA13 follows COMP1.
 4. DFF_A.Q only changes on PA10 clock edges.
 5. DFF_B.Q only changes on PA10 clock edges.
@@ -577,8 +670,10 @@ Scope checks, in order:
 11. For forced `Q_A=0`, TC0 count is 0.
 12. For forced `Q_B=1`, TC2 count over a known window is approximately `N`.
 13. For forced `Q_B=0`, TC2 count is 0.
-14. TCC1 `MC0` fires before `OVF`.
-15. TCC1 `OVF` fires once per configured window and the serial report shows
+14. `Tcc1CountevTest::run()` reports PASS (~187500 counts in 500 ms). FAIL with
+    EIC INTFLAG bit 11 clear means the PA10→PA11 jumper is missing or broken.
+15. TCC1 `MC0` fires before `OVF`.
+16. TCC1 `OVF` fires once per configured window and the serial report shows
     stable TC0/TC2 readings over repeated windows.
 
 ## 13. Known Open Decisions
@@ -596,3 +691,168 @@ Scope checks, in order:
   around TC pairing must not be treated as current errata without checking
   DS80000740S; keep TC2+TC3 in the board qualification checklist before freezing
   the production design.
+
+---
+
+## 14. Appendix — Difficulties encountered and empirical findings
+
+Date: 2026-05-20.
+
+This appendix is the after-the-fact record of what we learned trying to bring
+this design up on the ATSAMC21J18A-AU silicon. The body of the document
+(§1–13) reflects the *intent* of the design and the workarounds successively
+attempted; what follows here is the *result* of putting each attempt on real
+hardware. The end-state conclusion is that the J variant of the silicon
+cannot host this design in a fully freewheel configuration: the project
+migrates to ATSAMC21N18A-AU, documented in
+[design-dual-channel-N.md](design-dual-channel-N.md), where the extra 32-bit
+TC pair (TC4+TC5) closes the resource gap that the J cannot.
+
+### 14.1 Chronological test log
+
+What we tried, in order, on the J variant via the
+[src/tcc1_countev_test.hpp](src/tcc1_countev_test.hpp) bring-up scaffold:
+
+| # | Topology | TCC1 EVACT0 | Result | Interpretation |
+|---:|---|---|---|---|
+| 1 | TCC0 OVF → EVSYS ASYNC → TCC1 EV0 (same clock GCLK1=24 MHz) | `COUNTEV` (0x2) | `count = 0` | First attempt assumed COUNTEV would work on async; it didn't |
+| 2 | Same topology, EVACT0 changed | `COUNT` (0x5) | `count = 0` | Level-gated semantics; same outcome — even with COUNT mode for async, nothing reached the counter |
+| 3 | Added explicit `CTRLBSET.CMD=RETRIGGER` after TCC1 enable | `COUNT` | `count = 0` | Confirmed TCC1's STOP state was not the cause; RETRIGGER clears STOP per datasheet but count stays zero anyway |
+| 4 | Added `PCHCTRL[6]` (GCLK_EVSYS_CHANNEL_0) assignment to GCLK0 | `COUNT` | `count = 0` | Some datasheet wording suggests channel needs a GCLK even for ASYNC, but adding it didn't change the result |
+| 5 | Inserted EIC EXTINT[11] (PA10→PA11 PCB jumper) as intermediary, GCLK_EIC=12 MHz, sync rising-edge detection | `COUNT` (5) | `count = 0` | Even with a clean edge-detected pulse on a different clock, TCC1 still does not count |
+| 6 | Same as #5, EVACT changed | `INC` (0x4) | `count = 0` | INC is "increment per event"; same null result |
+| 7 | Added EIC interrupt path: ISR on EXTINT[11] toggles PB23 (scope probe). Scope confirms PB23 toggles at ~187.5 kHz (= 375 kHz / 2 because each interrupt inverts a level) | n/a (ISR-driven) | EIC fires reliably on the CPU side | Proved EIC sees the edges; the failure point is downstream — either EIC→EVSYS or EVSYS→TCC1 |
+| 8 | Replaced TCC1 with TC4 (16-bit standalone, GCLK0=48 MHz, EVACT=COUNT on async TCC0_OVF directly — no EIC) | TC4 `EVACT_COUNT` | `count = 56406` over 150 ms vs expected 56250 (**<0.3% error**) | **TC family event-counting works perfectly** when on an independent clock from the source; TCC family does not |
+| 9 | With both TCC1 (EVACT0=COUNT) and TC4 (EVACT=COUNT) attached as parallel users to EVSYS CH0 | mixed | TCC1=0, TC4=1 | Adding TCC1 as parallel user *blocked TC4* — possible CHSTATUS.USRRDY interaction even on ASYNC path |
+| 10 | Removed TCC1 from EVSYS CH0; TC4 alone, time-series sampling | n/a | TC4 climbs linearly 3616→18700→37554→56406 over 10/50/100/150 ms | Counter works perfectly. The earlier `final=0` was caused by TC's STOP command **resetting COUNT** (TC behavior, unlike TCC) |
+
+### 14.2 Hardware findings — what the silicon actually does
+
+Consolidating the empirical evidence:
+
+1. **TCC family does not perform event-counting on ASYNC EVSYS path.**
+   Four distinct experiments (EVACT0=COUNTEV, COUNT, INC across same-clock and
+   independent-clock event sources, both 1-cycle pulses and 83 ns wider EIC
+   pulses) all produced `count = 0` on TCC1. This is not documented as an
+   erratum, but is a consistent silicon behavior. Errata DS80000740S 1.21.9
+   formally forbids TCC users on SYNC/RESYNC EVSYS path, leaving ASYNC as
+   the only "supported" path — but empirically the ASYNC path doesn't carry
+   countable events to the TCC user either. The TCC family is effectively
+   unusable as an EVSYS event user for counting purposes.
+
+2. **TC family event-counting on ASYNC EVSYS works exactly as the datasheet
+   describes.** TC4 16-bit, EVACT=COUNT, GCLK0=48 MHz sampling a 1-cycle
+   pulse generated on GCLK1=24 MHz: lossless capture, accuracy better than
+   0.3 % over the integration window. This matches the published Microchip
+   examples ([LeoZhang-ATMEL/samc21_tcc_gpio_toggle_counter](https://github.com/LeoZhang-ATMEL/samc21_tcc_gpio_toggle_counter),
+   AT05567 application note).
+
+3. **TCC0 and TCC1 share PCHCTRL[28] at the hardware level** — they
+   cannot be placed on different clock generators. Any same-clock race
+   between TCC0 (event generator) and TCC1 (event user) is therefore
+   unavoidable as long as both are involved. This was the second strike
+   against TCC1 as window counter on top of finding #1.
+
+4. **TC STOP command resets COUNT to 0** when up-counting (datasheet §35
+   behavior). TCC's STOP preserves COUNT. This caused a misleading "0 final
+   count" reading until time-series sampling exposed that the counter was
+   counting correctly throughout the window and only zeroed at our explicit
+   stop. **When porting counter code between TC and TCC, this is a real
+   gotcha.**
+
+5. **EVSYS channels with parallel users may block on ASYNC path** when one
+   of the users is in an "unhealthy" state. Detaching TCC1 from the channel
+   restored TC4 operation. The mechanism (CHSTATUS.USRRDY interaction with
+   ASYNC, or other) is not fully understood, but the practical rule is:
+   **don't mix TCC and TC users on the same EVSYS channel** if the TCC user
+   is in a configuration that doesn't count (e.g., TCC EVACT on ASYNC).
+
+6. **EIC asynchronous edge detection has a documented erratum** (only first
+   edge detected after configuration). Sync edge detection (`ASYNCH=0`)
+   works; pulse width emitted on EVSYS = 1 GCLK_EIC cycle. Pulse width must
+   be ≥ the downstream sampling period for reliable capture — driving
+   GCLK_EIC ≥ GCLK_TCC_user is what gives a >1-cycle pulse at the user.
+
+7. **TCC needs explicit `CTRLBSET.CMD=RETRIGGER` to clear `STATUS.STOP`
+   when `EVCTRL.EVACTn != OFF`.** The datasheet documents this only for
+   the OFF case ("enabling the counter will also start the counter"). For
+   any other EVACT, ENABLE alone leaves STOP set; events are then
+   silently ignored. This caught us on iteration 3 above.
+
+8. **CCL INSEL=TCC routing is per-LUT hard-wired**: LUT0→TCC0, LUT1→TCC1,
+   LUT2→TCC2, LUT3→TCC0 (wrap because TCC3 doesn't exist on SAMC21). You
+   cannot reassign which TCC each LUT sees internally. To get TCC2's WO
+   signals into LUT0 or LUT3 you would need PCB loopback through CCL
+   function-I input pins. This effectively pinned TCC0 to the heartbeat
+   role in this design.
+
+9. **TC EVACT=COUNT (value `0x2`) and TCC EVACT0=COUNT (value `0x5`) are
+   different semantics** even though they share a name:
+   - TC `COUNT`: 1 increment per received event (edge-detected internally,
+     prescaler bypassed).
+   - TCC `COUNT`: counter ticks on each cycle of the prescaled clock *while*
+     the event input is asserted. Wide-pulse "level gating" semantics.
+
+   Confusing the two leads to off-by-factor errors when porting code.
+
+### 14.3 Conclusion — why SAMC21J cannot host this design in pure freewheel
+
+The functional requirement is **three simultaneous hardware event counters**
+during the measurement window:
+- Channel A duty counter (event-count CCL LUTOUT1)
+- Channel B duty counter (event-count CCL LUTOUT2)
+- Window/period counter (event-count TCC0 OVF)
+
+All three must run without CPU intervention during the window — the CPU
+should only wake at the window boundary to read totals.
+
+Counting peripherals on SAMC21J that can natively event-count on ASYNC
+EVSYS with ≥17-bit width (needed for 10 NPLC at 50 Hz line):
+
+- TC0+TC1 32-bit pair ✓
+- TC2+TC3 32-bit pair ✓
+- TC4 16-bit standalone (too narrow alone, would need ISR accumulator) ⚠
+- TCC0/TCC1/TCC2 — TCC family does not event-count on ASYNC ✗ (empirical)
+
+So J has 2 viable native event counters and we need 3. The gap closes only
+by violating one of the project's design principles (pure freewheel) — e.g.
+by using TC4 + an ISR overflow accumulator for the window counter.
+
+The N variant (SAMC21N18A) adds **TC4+TC5 and TC6+TC7 as 32-bit pairs**,
+yielding 4 native event counters — exactly the resources this design
+needs. All three counters become freewheel; the CPU intervenes only at
+the window boundary (a ~5 Hz ISR for 200 ms windows). The migration is
+documented in [design-dual-channel-N.md](design-dual-channel-N.md). The
+firmware is mostly portable: the CCL routing, the AC/DFF/ADC plumbing,
+the TCC0 heartbeat — all unchanged. Only the window counter peripheral
+moves from TCC1 (broken on J) to TC4+TC5 (which uses the proven TC
+EVACT=COUNT pattern, exactly the pattern that validated TC4 on the J
+prototype).
+
+### 14.4 Lessons preserved here for future readers
+
+If a future project needs to use SAMC21 (J or N) for event counting:
+
+- **Use TC, not TCC, as the event-counting user.** The TCC family on this
+  silicon does not deliver event-counted output on ASYNC EVSYS, regardless
+  of clock ratio or pulse width tested.
+- **Sample at a higher clock than the event source** (different PCHCTRL,
+  not just a different GCLK selection on the same PCHCTRL). This avoids
+  the same-clock setup/hold race for 1-cycle pulses.
+- **Mind the TC vs TCC `STOP` semantic asymmetry**: TC resets COUNT, TCC
+  preserves it. Use time-series sampling during bring-up to expose this.
+- **Don't mix TCC and TC users on the same EVSYS channel** until the
+  TCC user is verified working in its own right.
+- **`EVACT0 != OFF` requires explicit RETRIGGER after ENABLE** on TCC.
+  This is one line of code but easy to miss in the datasheet.
+- **Errata DS80000740S 1.21.9** forces ASYNC EVSYS for TCC users. This is
+  the constraint that initiated the chain of discoveries above.
+
+### 14.5 Test code preserved
+
+[src/tcc1_countev_test.hpp](src/tcc1_countev_test.hpp) is the bring-up
+scaffold used for the experiments in §14.1. It is left in the project
+as documentation of the test sequence; the last state on the J prototype
+demonstrates configuration #10 (TC4 alone with time-series sampling). It
+is not a production component — production firmware will follow the N
+design and use TC4+TC5 in COUNT32.

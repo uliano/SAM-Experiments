@@ -4,7 +4,7 @@ type: concept
 tags: [ccl, logic, lut, samc21]
 sources: [samc21-datasheet-ch37-ccl, samc21-errata]
 created: 2026-05-06
-updated: 2026-05-18
+updated: 2026-05-21
 ---
 
 # CCL Configuration
@@ -43,7 +43,7 @@ GCLK PCHCTRL index: **38**
 | 0x0 | MASK | Constant 0 |
 | 0x1 | FEEDBACK | This LUT's own output |
 | 0x2 | LINK | LUT(n+1).OUT → LUT(n).IN (higher feeds lower) |
-| 0x3 | EVENT | EVSYS event input (LUTEI=1 required) |
+| 0x3 | EVENT | EVSYS event input (LUTEI=1 required). **On J variant the CCL applies a built-in rising-edge detector**: the LUT slot receives a 1 GCLK_CCL strobe per EVSYS rising edge, *not* the level. To pass a level through, use `ASYNCEVENT` — N variant only (see below). |
 | 0x4 | IO | I/O pin, function I |
 | 0x5 | AC | AC comparator, fixed mapping (see below) |
 | 0x6 | TC | TC WO output (see TC mapping below) |
@@ -195,6 +195,79 @@ Current DS80000740S Rev-F-relevant CCL errata:
 
 Set LUTCTRLn.LUTEO=1 to enable the event output for a LUT.
 Set LUTCTRLn.LUTEI=1 to accept an EVSYS event as IN[x] (INSEL=EVENT for that slot).
+
+### `INSEL=EVENT` vs `INSEL=ASYNCEVENT` — edge detector
+
+Datasheet §37 is explicit: with `INSEL=EVENT`, the CCL inserts a **built-in
+rising-edge detector** before the LUT input. The LUT input therefore sees
+a 1 GCLK_CCL strobe per rising edge of the EVSYS line, not the EVSYS line
+itself. This is true even when the EVSYS path is `PATH=ASYNCHRONOUS` and
+the source carries a level (e.g. `AC_COMP_0` with `EVCTRL.COMPEO0=1`
+— see [[AC Configuration]] for confirmation that `COMPEO` is a level).
+
+`INSEL=ASYNCEVENT` (value 0xB) **disables the edge detector** and feeds
+the LUT the EVSYS line directly. This is the input mode required to use
+EVSYS as a level carrier into a LUT (e.g. a CCL-internal DFF's D-input).
+
+`ASYNCEVENT` is **N-variant only**. The SAMC21J18A CMSIS header does
+not define it, and §37 says "This feature is only available on SAM C20/
+C21 N variants." On the J part there is **no way to bring an EVSYS
+event into a LUT as a level** — every CCL EVENT input is forced through
+the edge detector. Designs that need a level entering the CCL on J must
+route through an `INSEL=IO` pad (external loopback) instead.
+
+Empirically observed 2026-05-21: routing `AC_COMP_0` (a level on EVSYS)
+into LUT2 with `INSEL=EVENT` on the J part yielded 1-cycle CCL output
+strobes on AC rising edges and a constant low on the LUT pad while the
+comparator was held high. Initially mis-attributed to a non-level
+`COMPEO` semantic; the datasheet clarifies it is the CCL edge detector
+on `EVENT`. The corresponding test is `src/ac_compeo_test.hpp`.
+
+## Sequential Logic (`SEQCTRL[0..1]`) — DFF Requires Edge Setup
+
+Each LUT pair (LUT0+LUT1 for `SEQCTRL[0]`, LUT2+LUT3 for `SEQCTRL[1]`)
+can be configured as a sequential block via `SEQSEL`. Possible modes:
+`DISABLE` (0x0), `DFF` (0x1), `JK` (0x2), `DLATCH` (0x3), `RS` (0x4).
+In `DFF` mode the even LUT drives `D` and the odd LUT drives `G`, per
+datasheet §37.6.2.7 Table 37-2.
+
+**Important and easy to miss**: `SEQSEL=DFF` is *not* edge-triggered on
+the LUT_odd input by default. Table 37-2 shows `G=1, D=X → OUT=D` and
+`G=0 → hold` — these are level-sensitive entries, identical to the
+DLATCH table 37-4. With LUT_odd configured as a plain combinational
+passthrough, the SEQ "DFF" therefore degenerates into a gated latch.
+
+To get a real rising-edge flip-flop, **the LUT_odd that feeds the SEQ
+`G` input must enable `FILTSEL` (SYNCH or FILTER) *and* `EDGESEL=1`**.
+The optional synchronizer (required as a precondition for the edge
+detector per §37.6.2.6) clocks LUT_odd's combinational output to
+GCLK_CCL; the edge detector then turns each rising edge of the
+synchronized signal into a 1 GCLK_CCL strobe. That strobe is what the
+SEQ block then sees as `G`, so D is captured only during the strobe
+— i.e. on each rising edge of the LUT_odd combinational input.
+
+| LUT_odd config                              | SEQ DFF effective behaviour |
+|---------------------------------------------|------------------------------|
+| `FILTSEL=DISABLE`, `EDGESEL=0` (default)    | Gated latch (Q tracks D while LUT_odd output is high; held while low) |
+| `FILTSEL=SYNCH` or `FILTER`, `EDGESEL=1`    | Rising-edge DFF (Q latches D on each rising edge of LUT_odd input) |
+
+Empirically verified on SAMC21J18A 2026-05-21 (`src/ccl_seq_dff_test.hpp`):
+the same `SEQCTRL[1]=DFF` configuration, with the LUT_odd (LUT3) edge
+setup toggled, produces both behaviours on the same silicon. With the
+edge setup off, Q tracks D continuously while CLK is high; with it on,
+Q changes only on CLK rising edges. The empirical evidence resolves the
+ambiguity in the datasheet tables.
+
+Same test confirms `INSEL=LINK` on LUT_n reads the **post-SEQ** output
+of LUT_{n+1} (the latched Q, not the pre-SEQ LUT_even truth). For
+distributing Q within the CCL, LINK is the correct path; no extra EVSYS
+channel is needed.
+
+The other sequential modes (`JK`, `DLATCH`, `RS`) have not been
+exhaustively re-tested under the edge-setup discriminator, but the
+datasheet text suggests they should be analogously affected — JK
+ought to become a proper edge-triggered JK flip-flop with the same
+`FILTSEL`+`EDGESEL` recipe on the K input.
 
 ## Initialization Example (Pure Combinational, No GCLK)
 

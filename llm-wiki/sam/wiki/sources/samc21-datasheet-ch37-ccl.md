@@ -4,7 +4,7 @@ type: source
 tags: [ccl, logic, lut, samc21, datasheet]
 sources: [samc21-datasheet-ch37-ccl]
 created: 2026-05-06
-updated: 2026-05-18
+updated: 2026-05-21
 ---
 
 # SAMC21 Datasheet Ch.37 CCL
@@ -54,7 +54,7 @@ the Event System to route outputs and synchronize across peripherals.
 | 0x0 | MASK | Constant 0 (input masked) |
 | 0x1 | FEEDBACK | Output of this LUT fed back as input |
 | 0x2 | LINK | Output of the next-higher LUT (LUT(n+1).OUT → LUT(n).IN) |
-| 0x3 | EVENT | Linked event input (LUTEI) |
+| 0x3 | EVENT | Linked event input (requires LUTEI=1). §37 explicitly: "By default, CCL includes an edge detector. When the event is received, an internal strobe is generated when a rising edge is detected. The pulse duration is one GCLK_CCL clock cycle." On the J variant there is no way to bypass the edge detector — use `ASYNCEVENT` on the N variant. See [[CCL Configuration]]. |
 | 0x4 | IO | I/O pin (function I in Table 6-2) |
 | 0x5 | AC | Analog Comparator output — fixed mapping per LUT (see below) |
 | 0x6 | TC | TC WO output — datasheet says TC0/TC1/TC2/TC3 for LUT0/1/2/3 |
@@ -62,7 +62,7 @@ the Event System to route outputs and synchronize across peripherals.
 | 0x8 | TCC | TCC waveform output. On SAMC21J18A: LUT0=TCC0, LUT1=TCC1, LUT2=TCC2, LUT3=TCC0. The input slot selects WO[0]/WO[1]/WO[2]. See [[CCL Configuration]] for the verified mapping. |
 | 0x9 | SERCOM | SERCOM data output |
 | 0xA | ALT2TC | N-series only |
-| 0xB | ASYNCEVENT | N-series only |
+| 0xB | ASYNCEVENT | N-series only. Disables the rising-edge detector on the EVENT input so the LUT slot sees the EVSYS line as a level. Required if a level needs to enter the CCL through EVSYS (e.g. AC `COMPEO` as a DFF D-input). Not available on the J variant. |
 
 ### INSEL=AC Fixed Mapping (per Datasheet)
 
@@ -152,6 +152,19 @@ does not need a PCB loopback.
 
 SEQCTRL.SEQSEL0 controls LUT0/LUT1 pair; SEQCTRL.SEQSEL1 controls LUT2/LUT3.
 With RS latch (0x4): LUT0.OUT = Set, LUT1.OUT = Reset (for pair 0).
+
+§37.6.2.7 Table 37-2 (DFF) and Table 37-4 (DLATCH) describe the SEQ block
+**after** the optional per-LUT filter and edge detector — they show only
+the steady-state response in `(R, G, D) → OUT` form, which is identical
+between DFF and DLATCH except for the reset semantics. The behavioural
+difference between "DFF mode" and "latch mode" therefore comes from how
+the LUT_odd output reaches the SEQ `G` input: if LUT_odd is a plain
+combinational pass-through, `G` is a level and the SEQ "DFF" behaves
+as a gated latch; if LUT_odd has `FILTSEL` (SYNCH or FILTER) **and**
+`EDGESEL=1` enabled, `G` becomes a 1 GCLK_CCL strobe per rising edge
+of its input and the SEQ block latches D as a textbook rising-edge DFF.
+See [[CCL Configuration]] §"Sequential Logic" for the worked example
+and empirical confirmation 2026-05-21.
 
 Current Rev-F-relevant errata: configure `SEQCTRLx` and `LUTCTRLn` while
 `CCL->CTRL.ENABLE=0`, then enable `CCL->CTRL` last. Avoid `CTRL.SWRST` in

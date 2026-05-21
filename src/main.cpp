@@ -3,7 +3,7 @@
 #include "quartz_test.hpp"
 #include "serial.hpp"
 #include "timebase.hpp"
-#include "tcc1_countev_test.hpp"
+#include "ccl_seq_dff_test.hpp"
 
 int main(void)
 {
@@ -14,7 +14,7 @@ int main(void)
     QuartzTest::init();
     QuartzTest::report_once();
 
-    Tcc1CountevTest::run();
+    CclSeqDffTest::run();
     //AcClockProbeTest::run();
 
     for (;;)

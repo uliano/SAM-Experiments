@@ -8,5 +8,6 @@
   "C_Cpp.intelliSenseEngine": "default",
   "C_Cpp.errorSquiggles": "enabled",
   "C_Cpp.default.configurationProvider": "platformio.platformio-ide",
-  "C_Cpp.default.compileCommands": "${workspaceFolder}/compile_commands.json"
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/compile_commands.json",
+  "C_Cpp.default.compilerPath": "/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/bin/arm-none-eabi-gcc"
 }

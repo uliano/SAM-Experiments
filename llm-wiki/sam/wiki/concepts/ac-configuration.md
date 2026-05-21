@@ -4,7 +4,7 @@ type: concept
 tags: [ac, comparator, analog, firmware, samc21]
 sources: [samc21-datasheet-ch40-ac, samc21-errata]
 created: 2026-05-05
-updated: 2026-05-18
+updated: 2026-05-21
 ---
 
 # AC Configuration
@@ -248,9 +248,32 @@ Range: VDD/64 (VALUE=0) to VDD (VALUE=63). VALUE=31 → VDD/2.
 
 ## Event Outputs (EVCTRL, enable-protected)
 
-- `COMPEOx`: copy of comparator x output state (enable with `EVCTRL.COMPEOx`).
+- `COMPEOx`: **continuous copy of comparator x output state**
+  (level passthrough). Datasheet §40.6.2.4: "Events are generated using
+  the comparator output state, regardless of whether the interrupt is
+  enabled or not." `COMPCTRLx.INTSEL` configures the *interrupt*
+  edge/condition; it does **not** affect the event output. Enable with
+  `EVCTRL.COMPEOx=1`.
 - `WINEOx`: copy of window x inside/outside state.
 - `COMPEIx`: input event → starts a single-shot comparison on COMPx.
+
+### Carrying `COMPEO` into the CCL on J variant
+
+Even though `COMPEO` is a level on EVSYS, on the SAMC21**J** the CCL
+applies a built-in rising-edge detector on any `INSEL=EVENT` input —
+see [[CCL Configuration]] for the relevant datasheet quote. The LUT
+input therefore receives 1-cycle strobes on AC rising edges, not the
+comparator level. `INSEL=ASYNCEVENT` (which would bypass the detector)
+is **N-variant only**. To bring `AC_CMPx` into a CCL LUT as a level on
+the J variant, drive the `AC_CMPx` pad with `COMPCTRLx.OUT=ASYNC` and
+loop it back externally to a CCL `INSEL=IO` input. This is the path
+adopted in `design-single-channel_noDFF.md` sub-option A2.
+
+Empirically observed 2026-05-21 (`src/ac_compeo_test.hpp`): on the J
+part, routing `AC_COMP_0` to a CCL LUT via EVSYS with `INSEL=EVENT`
+yielded only AC-rise strobes and a constant-low LUT pad while AC was
+held high — symptoms of the CCL edge detector, *not* of an edge-pulse
+`COMPEO`.
 
 ## See Also
 

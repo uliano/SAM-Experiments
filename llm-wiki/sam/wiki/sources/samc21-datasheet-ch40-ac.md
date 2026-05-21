@@ -4,7 +4,7 @@ type: source
 tags: [ac, comparator, analog, samc21, datasheet]
 sources: [samc21-datasheet-ch40-ac]
 created: 2026-05-05
-updated: 2026-05-18
+updated: 2026-05-21
 ---
 
 # SAMC21 Datasheet Ch.40 AC
@@ -87,7 +87,15 @@ pair. VDD scaler with 64 levels available as a reference input.
 
 ## Events
 
-- Outputs: COMPEOx (comparator state change per INTSEL condition), WINEOx (window state change).
+- Outputs: COMPEOx — §40.6.2.4 specifies: "Events are generated using
+  the comparator output state, regardless of whether the interrupt is
+  enabled or not." So COMPEOx carries the comparator output as a
+  **level** on EVSYS, and `COMPCTRLx.INTSEL` does **not** influence the
+  event output (INTSEL is the interrupt selector). WINEOx (window state
+  change). See [[AC Configuration]] for the consequences when routing
+  COMPEOx into the CCL on the J variant (where `INSEL=EVENT` applies a
+  forced edge detector, and the level-preserving `ASYNCEVENT` mode is
+  N-only).
 - Inputs: COMPEIx (start comparison in single-shot mode).
 - INVEI0-3: invert COMPEIx input event signal.
 - EVCTRL (enable-protected, offset 0x02, 16-bit):

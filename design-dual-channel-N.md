@@ -249,12 +249,13 @@ MCLK->APBCMASK.reg |= MCLK_APBCMASK_TC4 | MCLK_APBCMASK_TC5;
 GCLK->PCHCTRL[TC4_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 while (!(GCLK->PCHCTRL[TC4_GCLK_ID].reg & GCLK_PCHCTRL_CHEN));
 
-// Configure TC4 as COUNT32 master (TC5 follows automatically)
+// Configure TC4 as COUNT32 master (TC5 follows automatically).
+// SAMC21 keeps WAVEGEN in a separate WAVE register, unlike SAMD21
+// where it sits in CTRLA — applies to both J and N variants.
 TC4->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
 while (TC4->COUNT32.SYNCBUSY.reg & TC_SYNCBUSY_SWRST);
-TC4->COUNT32.CTRLA.reg = TC_CTRLA_MODE_COUNT32
-                       | TC_CTRLA_PRESCALER_DIV1
-                       | TC_CTRLA_WAVEGEN_MFRQ;
+TC4->COUNT32.CTRLA.reg = TC_CTRLA_MODE_COUNT32 | TC_CTRLA_PRESCALER_DIV1;
+TC4->COUNT32.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
 TC4->COUNT32.CC[0].reg = N_periods_per_window - 1;  // MFRQ: TOP = CC0
 while (TC4->COUNT32.SYNCBUSY.reg & TC_SYNCBUSY_CC0);
 

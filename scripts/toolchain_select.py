@@ -6,12 +6,17 @@ Import("env")
 if sys.platform == "win32":
     tc = Path("C:/Users/uliano/stuff/toolchains/arm-gnu-toolchain-15.2.rel1-mingw-w64-i686-arm-none-eabi/bin")
     ext = ".exe"
+elif sys.platform == "darwin":
+    tc = Path("/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/bin")
+    ext = ""
 else:
     tc = Path("/opt/arm-gcc-15/bin")
     ext = ""
 
 
 def _t(name):
+    if tc is None:
+        return name + ext
     return str(tc / (name + ext))
 
 

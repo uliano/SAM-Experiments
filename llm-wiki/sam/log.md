@@ -1,5 +1,69 @@
 # Wiki Log
 
+## [2026-05-21] correction | CCL SEQ "DFF" needs FILTSEL+EDGESEL on LUT_odd
+
+- Bench test (`src/ccl_seq_dff_test.hpp`) initially showed `SEQCTRL[1]=DFF`
+  with default LUT_odd (no filter, no edge detector) behaving as a
+  transparent gated latch: Q tracks D continuously while LUT_odd output is
+  high, holds while low. Mistakenly concluded that SAMC21J had no real
+  rising-edge DFF in CCL.
+- The user pushed back (AVR CCL clearly distinguishes DFF from DLATCH).
+  Datasheet re-read of §37.6.2.5 (Filter), §37.6.2.6 (Edge Detector) and
+  §37.6.2.7 (Sequential Logic) clarifies the picture: the SEQ block sees
+  the LUT_odd output **after** the optional per-LUT filter/synchronizer
+  and edge detector. By default both are off, so SEQ DFF degenerates to a
+  level-gated latch. Setting `FILTSEL=SYNCH` (or `FILTER`) and `EDGESEL=1`
+  on LUT_odd turns the LUT_odd output into a 1 GCLK_CCL strobe per rising
+  edge, which then drives SEQ `G` as a true edge — producing textbook
+  rising-edge DFF behaviour.
+- Re-test confirms: same `SEQSEL=DFF` setting, LUT_odd edge bits flipped
+  on, all nine steps of the discriminator sequence now match the edge
+  DFF model; Q changes only on CLK rising edges, D changes with CLK
+  held are ignored. INSEL=LINK confirmed to read post-SEQ Q (not pre-SEQ
+  truth) in both modes.
+- Updated [[CCL Configuration]] §"Sequential Logic (`SEQCTRL[0..1]`)
+  — DFF Requires Edge Setup" with the table comparing the two LUT_odd
+  setups and the empirical record.
+- Updated [[SAMC21 Datasheet Ch.37 CCL]] §Sequential Logic to point at
+  the same explanation.
+- Cascade outside the wiki: `design-single-channel_noDFF.md` §11 LUT3
+  block updated to require `FILTSEL=SYNCH` + `EDGESEL=1`; §16.2 and §16.3
+  marked resolved with the empirical reference. The no-DFF design is
+  realisable on J after all — the §15 race concern remains as before.
+
+## [2026-05-21] correction | AC COMPEO is a level; CCL EVENT input has J-side edge detector
+
+- Datasheet review reverses the earlier "COMPEO is an edge pulse"
+  conclusion. §40.6.2.4 (AC) states explicitly that "events are generated
+  using the comparator output state, regardless of whether the interrupt
+  is enabled or not" → `COMPEOx` is a continuous level on EVSYS, and
+  `COMPCTRLx.INTSEL` only configures the interrupt edge, not the event
+  output.
+- The empirical symptom that misled the first conclusion — a CCL pad
+  reading low while AC was held high, and 10 (not 20) TC counts per
+  10 toggle cycles — is now attributed to CCL §37: "By default, CCL
+  includes an edge detector. When the event is received, an internal
+  strobe is generated when a rising edge is detected. The pulse duration
+  is one GCLK_CCL clock cycle." The `INSEL=ASYNCEVENT` mode that would
+  bypass the detector is **N-variant only**, so on the J part there is
+  no way to admit a level signal into a LUT via EVSYS.
+- Updated [[AC Configuration]] §"Event Outputs" — `COMPEO` is a level
+  passthrough; added a J-variant caveat with cross-reference to the CCL
+  edge detector and the A2 loopback workaround.
+- Updated [[SAMC21 Datasheet Ch.40 AC]] §Events to quote §40.6.2.4
+  directly and cross-reference [[AC Configuration]].
+- Updated [[CCL Configuration]]: INSEL table now flags that the J
+  variant's EVENT input is edge-detected; added a dedicated subsection
+  on `INSEL=EVENT` vs `INSEL=ASYNCEVENT` and the N-only constraint.
+- Updated [[SAMC21 Datasheet Ch.37 CCL]] INSEL table with the §37 quote
+  for EVENT and the N-only note for ASYNCEVENT.
+- Cascade outside the wiki: `design-single-channel_noDFF.md` §3.5/§5/§16
+  rewritten — A1 still rejected, A2 still adopted, but the *reason* is
+  the CCL edge detector on J, not a non-level COMPEO. Side note: the
+  N-only `ASYNCEVENT` feature is irony — the no-DFF design is J-only
+  (the N target is dual-channel and doesn't fit no-DFF), so the one
+  variant that has `ASYNCEVENT` is the one where we wouldn't use no-DFF.
+
 ## [2026-05-18] correction | DS80000740S errata and AC async design rule
 
 - Re-checked the current local errata PDF, `DS80000740S` (April 2026), against

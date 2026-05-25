@@ -1,5 +1,22 @@
 # Wiki Log
 
+## [2026-05-21] correction | J has 4 comparators; INSEL=AC carries level
+
+- While planning the full noDFF integration, confirmed the SAMC21J18A has all
+  four comparators (COMP0–COMP3): CMSIS `AC.COMPCTRL[4]`/`SCALER[4]`; datasheet
+  §40.1 restricts CMP2/CMP3 inputs to AIN[4:5] only on the E/G variants;
+  Table 6-2 bonds AC AIN[4..7] on the J. The `design-single-channel_noDFF.md`
+  claim "SAMC21 AC has only COMP0 and COMP1" was wrong and is corrected there.
+- [[AC Configuration]] was already correct on the comparator count (no change
+  needed). Added to [[CCL Configuration]] §"AC Input Mapping" a note that
+  `INSEL=AC` carries the comparator **level** combinationally (vs the
+  edge-detected `INSEL=EVENT`), requires `COMPCTRLn.OUT∈{SYNC,ASYNC}`, and that
+  on the J reading a comparator straight into its mapped LUT (e.g. LUT2←COMP2)
+  is the clean way to bring an analog threshold into the CCL.
+- Consequence for the design: the noDFF DFF D-input uses COMP2 via `INSEL=AC`
+  directly — no AC pad loopback, no EVSYS — dropping the design from 3 jumpers
+  to 2. Implemented in `src/single_channel_nodff.hpp`.
+
 ## [2026-05-21] correction | CCL SEQ "DFF" needs FILTSEL+EDGESEL on LUT_odd
 
 - Bench test (`src/ccl_seq_dff_test.hpp`) initially showed `SEQCTRL[1]=DFF`

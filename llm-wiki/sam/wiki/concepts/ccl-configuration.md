@@ -64,6 +64,14 @@ COMP0/COMP1 **cannot** be fed into LUT2/LUT3 via INSEL=AC. To route COMP0/COMP1
 to LUT2/LUT3: either (a) use AC COMPCTRL.OUT=1 and route via an AC output pin back
 to a CCL function-I input pin (PCB trace), or (b) use LINK if the logic allows.
 
+`INSEL=AC` carries the comparator output **level** combinationally into the LUT
+(not the edge-detected `INSEL=EVENT` path). The comparator must have
+`COMPCTRLn.OUT = SYNC` or `ASYNC` (not `OFF`) for the CCL-internal path to be
+live (datasheet §40.6). The SAMC21**J** has all four comparators, so reading a
+comparator straight into its mapped LUT is the cleanest way to bring an analog
+threshold into the CCL — e.g. LUT2←COMP2 as the D-input of a CCL-internal DFF
+(see `design-single-channel_noDFF.md`), needing no pad loopback or EVSYS channel.
+
 ## TC Input Mapping
 
 Older errata 1.8.3 (TC selection reversed) does not affect the target

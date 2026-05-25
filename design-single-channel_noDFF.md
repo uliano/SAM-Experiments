@@ -71,16 +71,24 @@ LUT3 too, to avoid an extra `INSEL=IO` loopback.
 |---|---|
 | LUT0 | COMP0 |
 | LUT1 | COMP1 |
-| LUT2 | COMP2 (does not exist on SAMC21) |
-| LUT3 | COMP3 (does not exist on SAMC21) |
+| LUT2 | COMP2 |
+| LUT3 | COMP3 |
 
-SAMC21 AC has only COMP0 and COMP1.
+Mapping per datasheet §37 Fig 37-8 and the formula `IN[N]=AC[N % NumComp]`:
+LUT_n reads COMP_n.
 
-**Consequence:** the DFF D-input (needs `AC_CMP0`) can read AC directly via
-`INSEL=AC` only if it lives on LUT0 or LUT1. Otherwise AC must enter the
-CCL via `INSEL=IO` (external pad loopback from PA12 = `AC_CMP0` pad) or via
-`INSEL=EVENT` (EVSYS routing of `AC_COMP_0` event — depends on COMPEO
-semantics, see §3.5).
+**Correction (2026-05-21): the SAMC21J18A has all four comparators
+(COMP0–COMP3), not just two.** CMSIS defines `AC.COMPCTRL[4]` and
+`AC.SCALER[4]`; datasheet §40.1 states the AC implements two comparator
+pairs and restricts CMP2/CMP3 *inputs* to `AIN[4:5]` **only on the E and G
+variants**; Table 6-2 bonds AC `AIN[4..7]` on the J. (An earlier revision
+of this document wrongly claimed "SAMC21 AC has only COMP0 and COMP1".)
+
+**Consequence:** the DFF D-input can read its comparator directly via
+`INSEL=AC` on **LUT2 ← COMP2** (Layout A's D-input LUT). `INSEL=AC` carries
+the comparator output **level** (it is *not* the edge-detected `INSEL=EVENT`
+path), so no pad loopback and no EVSYS channel are needed for the D-input.
+This makes the §5 A1/A2 sub-options obsolete — see §5.
 
 ### 3.3 `INSEL=LINK` direction
 
@@ -128,25 +136,20 @@ experiment (`src/ac_compeo_test.hpp`):
    any EVSYS event entering a LUT through `INSEL=EVENT` is reduced to
    1-cycle strobes — the level on EVSYS is lost.
 
-Implication for this design: even though `COMPEO` is a level, on the J
-the CCL cannot receive it as a level. A DFF D-input requires a continuous
-level, so **sub-option A1 (`AC_COMP_0 → CCL_LUTIN_2`, `INSEL=EVENT`) is
-not viable on this silicon**. The only workable path is **sub-option A2
-(`AC_CMP0` pad on PA12 → external jumper → PA22 / `CCL_IN6`, fed into
-LUT2 via `INSEL=IO`)** — `INSEL=IO` does not apply the edge detector and
-preserves the level.
+This `EVENT` edge-detector behaviour matters whenever a *level* must enter
+a LUT through EVSYS on the J — see §6/§11 for the Q→REF-mux distribution,
+which is why that path uses an IO jumper rather than EVSYS.
 
-The initial bench measurement (2026-05-21) misattributed the symptom —
-1-cycle strobes on AC rising edges — to a non-level `COMPEO`. The
-datasheet review made clear that `COMPEO` is the level, and the strobes
-come from the CCL edge detector on `EVENT`. The final answer (A1 not
-viable on J, A2 adopted) is unchanged; the *reason* is.
+**It does not, however, affect the AC D-input.** §3.2's correction (the J
+has COMP2) means the DFF D-input on LUT2 reads COMP2 directly via
+`INSEL=AC`, which carries the comparator level natively and bypasses both
+the EVSYS edge detector and any pad loopback. The whole A1/A2 sub-option
+question (how to get `AC_CMP` into LUT2) is therefore **moot** — see §5.
 
-Note: even on the **N** variant, where `INSEL=ASYNCEVENT` would unlock a
-proper level path, the no-DFF design has no application — the N is the
-dual-channel target, and the no-DFF approach does not extend to dual
-channel (§17.1). So `ASYNCEVENT` is silicon that doesn't help us in the
-configurations we actually plan to ship.
+The initial bench measurement (2026-05-21) misattributed the EVENT-strobe
+symptom to a non-level `COMPEO`; the datasheet review corrected this
+(`COMPEO` is the level; the strobes come from the CCL `EVENT` edge
+detector). The `ac_compeo_test.hpp` evidence is preserved as the record.
 
 See [[AC Configuration]] and [[CCL Configuration]] in the wiki for the
 details and cross-references.
@@ -157,8 +160,10 @@ The four LUTs must absorb four roles (DFF-D, DFF-CLK, REF-mux, AND-gate).
 The constraints above narrow the choice:
 
 1. REF-mux requires LUT0 or LUT3 (only ones with `INSEL=TCC → TCC0`).
-2. DFF-D needs `AC_CMP0`. LUT0 (via `INSEL=AC`) is ideal. Otherwise LUT2
-   needs an external or EVSYS path.
+2. DFF-D needs a comparator. With the J's full COMP0–COMP3 (§3.2), the
+   D-input LUT can read its own comparator via `INSEL=AC`: LUT0←COMP0 or
+   LUT2←COMP2. (Earlier revisions wrongly believed only COMP0/COMP1 existed
+   and treated LUT2 as needing an external/EVSYS path.)
 3. DFF-CLK needs `HB_1_2`. LUT0 or LUT3 reach it directly (`INSEL=TCC IN2`).
 4. AND-gate needs `Q` and `HB_1_2`. Q is at the DFF output position.
 5. SEQ pairs are fixed: DFF-D and DFF-CLK must be in the same pair (LUT0+LUT1
@@ -170,14 +175,15 @@ Two coherent layouts result:
 
 | LUT | Role | Notes |
 |---|---|---|
-| LUT0 | REF mux | `INSEL=TCC` IN0,IN1 = `HB_1_8`,`HB_7_8`. IN2 = Q via EVSYS. |
+| LUT0 | REF mux | `INSEL=TCC` IN0,IN1 = `HB_1_8`,`HB_7_8`. IN2 = Q via `PA25→PA18` IO jumper. |
 | LUT1 | AND-gate | IN0 LINK = Q (LUT2.OUT after SEQ1). IN2 IO = PB10 (`HB_1_2` loopback). |
-| LUT2 | DFF D | Needs `AC_CMP0`; can't use `INSEL=AC` (would read non-existent COMP2). EVSYS or IO loopback. |
-| LUT3 | DFF CLK | `INSEL=TCC` IN2 = `HB_1_2` (LUT3 wraps to TCC0). |
+| LUT2 | DFF D | `INSEL=AC` IN0 = COMP2 (direct — the J has COMP2, §3.2). No loopback. |
+| LUT3 | DFF CLK | `INSEL=TCC` IN2 = `HB_1_2` (LUT3 wraps to TCC0); `FILTSEL=SYNCH`+`EDGESEL=1`. |
 
 Q distribution:
 - Q → LUT1 IN0 via `INSEL=LINK` (combinational, ~ns)
-- Q → LUT0 IN2 via EVSYS LUTOUT_2 → LUTIN_0 (PATH_ASYNCHRONOUS)
+- Q → LUT0 IN2 via external jumper `PA25 (CCL_OUT2) → PA18 (CCL_IN2)`,
+  `INSEL=IO`. (EVSYS `INSEL=EVENT` cannot carry the Q level on the J — §3.5.)
 
 ### Layout B — DFF on SEQ0 (LUT0+LUT1)
 
@@ -201,57 +207,45 @@ intra-CCL).
 
 **Layout A is recommended.** The rest of this document assumes Layout A.
 
-## 5. AC Routing for Layout A — Decision Locked
+## 5. AC Routing for Layout A — COMP2 direct (Decision Locked)
 
-LUT2 (the DFF D-input) needs `AC_CMP0` but cannot read it via `INSEL=AC`
-(would resolve to non-existent COMP2 — see §3.2). The remaining options
-were A1 (via EVSYS) and A2 (external pad loopback). With §3.5 now
-resolved, **A1 is not viable on the J variant**: although `COMPEO` is a
-continuous level on EVSYS, the CCL's `INSEL=EVENT` input applies a
-built-in rising-edge detector that the J variant cannot bypass
-(`ASYNCEVENT` is N-only). A DFF D-input requires a level, which the
-CCL EVENT slot strips down to 1-cycle strobes. **A2 is the adopted path.**
-
-### A2 — `AC_CMP0` via external pad loopback (adopted)
+The DFF D-input is on LUT2, which reads **COMP2 directly via `INSEL=AC`**
+(the J has COMP2, §3.2; `INSEL=AC` carries the comparator level natively).
+No pad loopback, no EVSYS, no edge-detector issue.
 
 ```text
-AC enabled with COMPCTRL0.OUT = ASYNC, AC_CMP0 driven on PA12 mux H
-External PCB jumper: PA12 → PA22
-PA22 muxed as I = CCL_IN6 (LUT2 IN0)
-LUT2 IN0 INSEL = IO → reads AC_CMP0 via PA22 pad
+AC COMP2: MUXPOS=PIN0 (AIN[4] = PA02), MUXNEG=VSCALE (VDD/2), OUT=ASYNC
+  (datasheet §40.6: OUT must be SYNC or ASYNC for the CCL-internal path)
+LUT2 IN0 INSEL = AC  →  reads COMP2 output level directly
 ```
 
-Cost: +1 external jumper (2 jumpers total: `PA10→PB10` and `PA12→PA22`).
-No EVSYS channel allocated for the AC path.
+The analog input therefore lives on **PA02** (AC `AIN[4]`, also
+`ADC0_AIN0`), not PA05. No jumper is needed for the AC path.
 
-### A1 — `AC_CMP0` via EVSYS (rejected on J, kept for record)
+### Obsolete sub-options A1/A2 (kept for record)
 
-The previously considered "elegant" variant — `AC_COMP_0 → CCL_LUTIN_2`
-via EVSYS, with LUT2 IN0 `INSEL=EVENT` — would have required the LUT to
-see the `COMPEO` level. The level is present on EVSYS (datasheet §40
-confirms), but the CCL's `INSEL=EVENT` slot applies a forced rising-edge
-detector on the J variant and only the N variant supports `ASYNCEVENT`
-to bypass it (datasheet §37, see §3.5). On the J part the LUT therefore
-sees only 1-cycle strobes on AC rising edges — useless as a DFF D-input.
-Listed here only so future work doesn't re-derive the same path without
-consulting the silicon-behaviour record.
+Earlier revisions, believing the J lacked COMP2, considered routing
+`AC_CMP0` into LUT2 either via EVSYS (`INSEL=EVENT`, "A1") or via an
+external pad loopback `PA12 → PA22` (`INSEL=IO`, "A2"). A1 is impossible
+on the J (the `INSEL=EVENT` edge detector destroys the level, §3.5); A2
+worked but cost a jumper. Both are **superseded by the COMP2 direct path
+above**, which needs neither.
 
-## 6. Peripheral Allocation (Layout A, sub-option A2)
+## 6. Peripheral Allocation (Layout A, COMP2 direct)
 
 | Peripheral | Role | Width | Clock | PCHCTRL |
 |---|---|---|---|---:|
 | TCC0 | Heartbeat (HB_1_8, HB_7_8, HB_1_2) | 24-bit | GCLK1 = 24 MHz | 28 |
-| AC COMP0 | Single-channel comparator | — | GCLK0 register; `OUT_ASYNC` | 40 |
-| ADC0 | Analog readback PA05 / `ADC0_AIN5` | 12-bit | own | 41 |
-| CCL LUT0 | REF mux | — | GCLK0 | 38 |
+| AC COMP2 | Single-channel comparator (PA02 = `AIN[4]`) | — | GCLK0 register; `OUT_ASYNC` | 40 |
+| ADC0 | Analog readback PA02 / `ADC0_AIN0` | 12-bit | own | 41 |
+| CCL LUT0 | REF mux (IN2 = Q via `PA25→PA18` jumper) | — | GCLK0 | 38 |
 | CCL LUT1 | COUNT_PULSE AND-gate | — | GCLK0 | 38 |
-| CCL LUT2 | DFF D-input (SEQ1) | — | GCLK0 | 38 |
-| CCL LUT3 | DFF CLK-input (SEQ1) | — | GCLK0 | 38 |
+| CCL LUT2 | DFF D-input (SEQ1), IN0 = COMP2 via `INSEL=AC` | — | GCLK0 | 38 |
+| CCL LUT3 | DFF CLK-input (SEQ1), `FILTSEL=SYNCH`+`EDGESEL=1` | — | GCLK0 | 38 |
 | TC0+TC1 | Window counter (COUNT32, MFRQ, event-count `TCC0_OVF`) | 32-bit | GCLK0 = 48 MHz | 30 |
 | TC2+TC3 | Duty counter (COUNT32, NFRQ, event-count `CCL_LUTOUT_1`) | 32-bit | GCLK0 = 48 MHz | 31 |
 | EVSYS CH0 | `TCC0_OVF → TC0_EVU` (ASYNC) | — | — | — |
 | EVSYS CH1 | `CCL_LUTOUT_1 → TC2_EVU` (ASYNC) | — | — | — |
-| EVSYS CH2 | `CCL_LUTOUT_2 → CCL_LUTIN_0` (ASYNC, Q to REF mux) | — | — | — |
 | SERCOM5 | UART monitor, 1 Mbaud | — | own | various |
 
 (Sub-option A1, which would have added EVSYS CH3 routing
@@ -263,7 +257,7 @@ Identical to [design-single-channel.md](design-single-channel.md) §4. The
 GCLK_AC requirement is needed only for AC register access; the COMPEO event
 output does not introduce extra clock requirements.
 
-## 8. Pin Allocation (Layout A, sub-option A2)
+## 8. Pin Allocation (Layout A, COMP2 direct)
 
 Sorted by port and pin.
 
@@ -271,18 +265,18 @@ Sorted by port and pin.
 |---|---|---|---|---|---|
 | PA00 | — | analog | `XOSC32K_XIN` | XOSC32K input | optional, build flag |
 | PA01 | — | analog | `XOSC32K_XOUT` | XOSC32K output | (same) |
+| PA02 | — | analog in | `analog_in` | `AC_AIN4` (COMP2) + `ADC0_AIN0` | channel input; firmware-driven GPIO in self-test |
 | PA03 | — | analog | `VREF` | VREF conditioning | 22 Ω + 22 nF to GND |
 | PA04 | — | analog | `VREF` | VREF conditioning | (same) |
-| PA05 | B | analog in | `analog_in` | `AC_AIN1` + `ADC0_AIN5` | unchanged |
 | PA07 | I | digital out | `REF` | `CCL_OUT0` (LUT0) | REF mux output |
 | PA09 | E | digital out | `HB_7_8` | `TCC0/WO1` | scope/debug |
 | PA10 | F | digital out | `HB_1_2` | `TCC0/WO2` | drives external loopback to PB10 |
 | PA11 | I | digital out | `COUNT_PULSE` | `CCL_OUT1` (LUT1) | EVSYS source for TC2 duty counter |
-| PA12 | H | digital out | `AC_CMP0` | `AC_CMP0` | drives external loopback to PA22 |
+| PA13 | GPIO | digital out | `ISR_MARK` | GPIO output | window-ISR duration marker (scope) |
 | PA14 | — | analog | `XIN` | XOSC | 24 MHz crystal |
 | PA15 | — | analog | `XOUT` | XOSC | (same) |
-| PA22 | I | digital in | `AC_CMP0` loopback | `CCL_IN6` (LUT2/IN0) | from PA12 |
-| PA25 | I | digital out | `DFF.Q` (optional) | `CCL_OUT2` (LUT2 via SEQ1) | scope/debug only |
+| PA18 | I | digital in | `DFF.Q` loopback | `CCL_IN2` (LUT0/IN2) | from PA25 (Q to REF mux) |
+| PA25 | I | digital out | `DFF.Q` | `CCL_OUT2` (LUT2 via SEQ1) | Q output; drives loopback to PA18; scope |
 | PA30 | — | digital | `SWCLK` | SWD | reserved |
 | PA31 | — | digital | `SWDIO` | SWD | (same) |
 | PB10 | I | digital in | `HB_1_2` loopback | `CCL_IN5` (LUT1/IN2) | from PA10 |
@@ -293,17 +287,23 @@ Sorted by port and pin.
 
 Freed compared to with-DFF single-channel design:
 - PA08 (was `CCL_IN3` for DFF.Q to LUT1/IN0)
-- PA18 (was `CCL_IN2` for DFF.Q to LUT0/IN2)
 - External DFF package and decoupling
 
-Added:
-- PA22 mux I = `CCL_IN6` (LUT2/IN0), receives `AC_CMP0` via PCB jumper
-- PA25 mux I = `CCL_OUT2` (LUT2/SEQ1 output) — exposes internal `DFF.Q` for
-  scope validation. Optional; leave as GPIO if not muxed.
+Freed compared to earlier noDFF revisions (COMP2 direct removes the AC loopback):
+- PA12 (`AC_CMP0` pad) and PA22 (`CCL_IN6`) — no longer used.
 
-External jumpers required:
+Added:
+- PA02 = AC `AIN[4]` (COMP2 `MUXPOS=PIN0`); also `ADC0_AIN0`. The channel
+  analog input. In the bring-up self-test the firmware drives PA02 as a GPIO
+  output; the analog mux still reads the pad voltage.
+- PA18 mux I = `CCL_IN2` (LUT0/IN2), receives Q via PCB jumper from PA25.
+- PA25 mux I = `CCL_OUT2` (LUT2/SEQ1 output) — Q; drives the PA18 loopback
+  and is a scope point for the latched comparator.
+- PA13 GPIO out = window-ISR duration marker.
+
+External jumpers required (2):
 - `PA10 → PB10` (`HB_1_2` into LUT1 AND-gate)
-- `PA12 → PA22` (`AC_CMP0` into LUT2 DFF D-input)
+- `PA25 → PA18` (`DFF.Q` into LUT0 REF mux)
 
 ## 9. TCC0 Heartbeat Procedure
 
@@ -317,29 +317,29 @@ GCLK->PCHCTRL[AC_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 while (!(GCLK->PCHCTRL[AC_GCLK_ID].reg & GCLK_PCHCTRL_CHEN));
 ```
 
-Comparator COMP0:
+Comparator **COMP2** (read directly by LUT2 via `INSEL=AC`):
 
 | Field | Value | Notes |
 |---|---|---|
-| Comparator | `COMP0` | only one used; COMP1 unused |
-| Positive input | `MUXPOS_PIN1`, PA05 / `AC_AIN1` | unchanged |
-| Negative input | `VSCALE` / `INTREF` / external — per analog requirement | unchanged |
-| Speed | `SPEED_HIGH` | unchanged |
-| Filter | `FLEN_OFF` | unchanged |
-| Output | `OUT_ASYNC` | unchanged |
-| Pad output | PA12 mux H, `AC_CMP0` | jumpered to PA22 |
-| INTSEL | reset default | not on the signal path; `COMPEO` is independent (§3.5) |
-| `EVCTRL.COMPEO0` | `0` | not used — AC reaches the CCL through the PA12→PA22 loopback |
-| ADC | PA05 / `ADC0_AIN5` | unchanged |
+| Comparator | `COMP2` | maps to LUT2 via `INSEL=AC` (§3.2) |
+| Positive input | `MUXPOS_PIN0`, PA02 / `AC_AIN4` | COMP2/3 PIN0 = AIN[4] |
+| Negative input | `VSCALE` (VDD/2, `SCALER[2]=31`) | or `INTREF`/external per requirement |
+| Speed | `SPEED_HIGH` | |
+| Filter | `FLEN_OFF` | |
+| Output | `OUT_ASYNC` | required for CCL-internal use (§40.6: OUT∈{SYNC,ASYNC}) |
+| Pad output | not needed | COMP2 reaches LUT2 internally; no pad/loopback |
+| `EVCTRL.COMPEO2` | `0` | not used |
+| ADC | PA02 / `ADC0_AIN0` | if analog readback is wanted |
 
-`OUT_ASYNC` is required so that PA12 drives `AC_CMP0` continuously (live
-level) into the PA22 loopback. Per
+`OUT_ASYNC` (not `OUT_OFF`) is required: per datasheet §40.6 and
 [`ac-configuration.md`](llm-wiki/sam/wiki/concepts/ac-configuration.md),
-`COMPCTRLn.OUT=OFF` silently blocks the CCL-via-`INSEL=AC` path; for our
-loopback path the pad must be live.
+`OUT=OFF` silently blocks the CCL-via-`INSEL=AC` path.
 
-If `INTREF` is selected, account for errata DS80000740S §1.5.6 (spurious
-COMP interrupt on enable; clear or use `VSCALE`).
+Enable sequence (comparator index 2): write `SCALER[2]` and `COMPCTRL[2]`
+with the comparator disabled, wait `SYNCBUSY.COMPCTRL2`, set `CTRLA.ENABLE`
+and `COMPCTRL[2].ENABLE`, wait `STATUSB.READY2`, then clear
+`INTFLAG.COMP2` (errata DS80000740S §1.5.6 spurious-enable flag; or use
+`VSCALE` as here). See `src/single_channel_nodff.hpp`.
 
 ## 11. CCL Procedure
 
@@ -373,10 +373,15 @@ Truth bit-index convention: `bit_index = (IN2 << 2) | (IN1 << 1) | IN0`.
 |---|---:|---|
 | IN0 | `TCC` | TCC0/WO[0] = `HB_1_8` |
 | IN1 | `TCC` | TCC0/WO[1] = `HB_7_8` |
-| IN2 | `EVENT` | Q via EVSYS LUTIN_0 (channel 2) |
+| IN2 | `IO` | PA18 / `CCL_IN2` = Q via `PA25→PA18` jumper |
 
 `TRUTH = 0xAC`. `LUTCTRL0.ENABLE = 1`. `LUTEO = 0`.
 Output: `CCL_OUT0 → PA07 mux I`.
+
+IN2 uses `INSEL=IO` (not `EVENT`): Q must reach LUT0 as a continuous level,
+and the J's `INSEL=EVENT` edge detector (§3.5) would destroy it. LINK is
+unavailable (LUT0 LINK reads LUT1, not LUT2), so Q is jumpered out of
+`CCL_OUT2` (PA25) into `CCL_IN2` (PA18).
 
 ### LUT1 — COUNT_PULSE AND-Gate
 
@@ -394,20 +399,20 @@ to `TC2_EVU` for the duty counter.
 
 ### LUT2 — DFF D-Input
 
-`D = AC_CMP0` (passthrough of IN0).
+`D = AC_CMP2` (passthrough of IN0).
 
 | LUT input | `INSEL` | Source |
 |---|---:|---|
-| IN0 | `IO` | PA22 / `CCL_IN6` = `AC_CMP0` loopback from PA12 |
+| IN0 | `AC` | COMP2 output (direct, internal — §3.2/§5) |
 | IN1 | `MASK` | constant 0 |
 | IN2 | `MASK` | constant 0 |
 
-`TRUTH = 0x02`. `LUTCTRL2.ENABLE = 1`. `LUTCTRL2.LUTEO = 1` (feeds EVSYS
-channel 2 for Q distribution; also feeds the LINK path to LUT1).
+`TRUTH = 0xAA` (passes IN0). `LUTCTRL2.ENABLE = 1`. `LUTEO = 0` (Q is
+distributed by LINK to LUT1 and by the PA25→PA18 jumper to LUT0; no EVSYS
+needed).
 Output: replaced by SEQ1 DFF Q. Goes to:
-- `CCL_OUT2 → PA25 mux I` (optional debug)
-- EVSYS generator `LUTOUT_2` (84) → channel 2 → LUTIN_0
-- LINK: LUT1 IN0 reads this combinationally
+- `CCL_OUT2 → PA25 mux I` (Q; drives the PA18 loopback; scope point)
+- LINK: LUT1 IN0 reads this combinationally (the AND-gate's Q)
 
 ### LUT3 — DFF CLK-Input
 
@@ -446,23 +451,19 @@ CCL->CTRL.reg = CCL_CTRL_ENABLE;
 
 | LUT | Role | IN2 | IN1 | IN0 | TRUTH | LUTEO | SEQ |
 |---:|---|---|---|---|---:|:---:|:---:|
-| 0 | REF mux | TCC `HB_7_8`... wait | TCC `HB_7_8` | TCC `HB_1_8` | `0xAC` | 0 | — |
-| 1 | AND | IO `HB_1_2` | MASK | LINK Q | `0x20` | 1 | — |
-| 2 | DFF D | MASK | MASK | IO `AC_CMP0` (via PA22) | `0x02` | 1 | SEQ1 D |
+| 0 | REF mux | IO `Q` (PA18) | TCC `HB_7_8` | TCC `HB_1_8` | `0xAC` | 0 | — |
+| 1 | AND | IO `HB_1_2` (PB10) | MASK | LINK `Q` | `0x20` | 1 | — |
+| 2 | DFF D | MASK | MASK | AC `COMP2` | `0xAA` | 0 | SEQ1 D |
 | 3 | DFF CLK (FILTSEL=SYNCH, EDGESEL=1) | TCC `HB_1_2` | MASK | MASK | `0xF0` | 0 | SEQ1 CLK |
-
-(LUT0 IN2 source: should read "EVENT Q via EVSYS", not "TCC HB_7_8" — the
-inline correction is in the LUT0 detail block above.)
 
 ## 12. EVSYS and TC32 Counter Procedure
 
-EVSYS channel allocation:
+EVSYS channel allocation (2 channels — Q→LUT0 is a jumper, not EVSYS):
 
 | EVSYS CH | Generator | ID | User | ID | Path |
 |---:|---|---:|---|---:|---|
 | 0 | `TCC0_OVF` | 35 | `TC0_EVU` | 23 | `ASYNC` |
 | 1 | `CCL_LUTOUT_1` | 83 | `TC2_EVU` | 25 | `ASYNC` |
-| 2 | `CCL_LUTOUT_2` | 84 | `CCL_LUTIN_0` | 40 | `ASYNC` |
 
 ```cpp
 // Channel 0: TCC0_OVF -> TC0
@@ -477,11 +478,8 @@ EVSYS->CHANNEL[1].reg =
     EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_CCL_LUTOUT_1) |
     EVSYS_CHANNEL_PATH_ASYNCHRONOUS;
 
-// Channel 2: CCL_LUTOUT_2 (=Q) -> CCL_LUTIN_0 (REF mux IN2)
-EVSYS->USER[EVSYS_ID_USER_CCL_LUTIN_0].reg = EVSYS_USER_CHANNEL(3);
-EVSYS->CHANNEL[2].reg =
-    EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_CCL_LUTOUT_2) |
-    EVSYS_CHANNEL_PATH_ASYNCHRONOUS;
+// (No channel for Q: it reaches LUT1 via LINK and LUT0 via the PA25->PA18
+//  jumper. EVSYS INSEL=EVENT could not carry the Q level on the J — §3.5.)
 ```
 
 TC0+TC1 (window) and TC2+TC3 (duty) configuration is identical to
@@ -489,8 +487,11 @@ TC0+TC1 (window) and TC2+TC3 (duty) configuration is identical to
 TC0+TC1, NFRQ for TC2+TC3, `EVCTRL = TCEI | EVACT_COUNT`, RETRIGGER after
 ENABLE per §14 finding #7 of the dual-channel J doc).
 
-ISR at window boundary is also identical — read TC2, RETRIGGER TC2,
-TC0 wraps automatically.
+ISR at window boundary (`irq_handler_tc0`): set the PA13 duration marker,
+read TC2 with `READSYNC`, **latch the comparator state (`AC.STATUSA.STATE2`)**,
+`RETRIGGER` TC2 to zero it for the next window, store both to volatiles for
+the application, clear the PA13 marker. TC0 auto-wraps in MFRQ mode. See
+`SingleChannelNoDFF::on_window_isr()` in `src/single_channel_nodff.hpp`.
 
 ## 13. Firmware Initialization Order
 
@@ -503,14 +504,16 @@ TC0 wraps automatically.
    - `TC2_GCLK_ID  = 31` → GCLK0
    - `AC_GCLK_ID   = 40` → GCLK0
    - `CCL_GCLK_ID  = 38` → GCLK0
-5. Configure all pins (PMUX + INEN where needed).
-6. Configure AC COMP0 (`OUT_ASYNC`, `MUXPOS_PIN1`); enable AC; wait
-   `READY0`. `EVCTRL.COMPEO0` stays at 0 — see §3.5.
+5. Configure all pins (PMUX + INEN where needed): PA02 input/GPIO, PA07/PA09/
+   PA10/PA11/PA25 peripheral outputs, PA18/PB10 CCL inputs, PA13 debug output.
+6. Configure AC **COMP2** (`MUXPOS_PIN0` = PA02/AIN[4], `MUXNEG_VSCALE`,
+   `OUT_ASYNC`); `CTRLA.ENABLE`, `COMPCTRL[2].ENABLE`; wait `READY2`; clear
+   `INTFLAG.COMP2`. `EVCTRL.COMPEO2` stays 0 (LUT2 reads COMP2 via `INSEL=AC`).
 7. Configure CCL while `CTRL.ENABLE = 0`:
    - SEQCTRL[0] = 0 (SEQ0 disabled)
    - SEQCTRL[1] = `SEQSEL_DFF`
-   - LUTCTRL0..LUTCTRL3 per §11 (include `ENABLE=1` and `LUTEO` as needed)
-8. Configure EVSYS channels 0, 1, 2.
+   - LUTCTRL0..LUTCTRL3 per §11 (LUT2 `INSEL=AC`; LUT3 `FILTSEL=SYNCH|EDGESEL`)
+8. Configure EVSYS channels 0 and 1.
 9. Configure TC0+TC1 (COUNT32, MFRQ, `CC[0]=N-1`, `EVCTRL = TCEI|EVACT_COUNT`,
    `INTENSET = OVF`).
 10. Configure TC2+TC3 (COUNT32, NFRQ, `EVCTRL = TCEI|EVACT_COUNT`).
@@ -528,29 +531,42 @@ Order matters — each step depends on the previous one passing.
 1. PA09 (`HB_7_8`) and PA10 (`HB_1_2`) show 375 kHz waveforms at expected
    duty cycles. `HB_1_8` has no pad — it's TCC0/WO[0] routed internally only.
 2. PA10 loopback appears on PB10 (clean digital input).
-3. PA12 (`AC_CMP0`) follows the comparator output as the analog input
-   crosses the threshold.
-4. PA22 receives the AC_CMP0 loopback from PA12.
-5. PA25 (`DFF.Q`, optional scope probe) updates **only on PA10 rising
-   edges** and equals the AC_CMP0 value sampled at that instant.
-6. PA07 (`REF`) shows the expected mux behaviour driven by `DFF.Q`:
-   - Force AC analog above threshold (DFF.Q = 1): `REF` follows `HB_1_8`.
-   - Force AC analog below threshold (DFF.Q = 0): `REF` follows `HB_7_8`.
-7. PA11 (`COUNT_PULSE`) shows the expected AND:
+3. Comparator tracks the analog input on PA02 crossing `VSCALE` (no AC pad
+   needed; observe indirectly via Q on PA25 or mux `AC/CMP2` on a free pin).
+4. PA25 (`DFF.Q`) updates **only on PA10 rising edges** and equals the COMP2
+   value sampled at that instant.
+5. PA07 (`REF`) shows the expected mux behaviour driven by `DFF.Q`:
+   - AC analog above threshold (DFF.Q = 1): `REF` follows `HB_1_8`.
+   - AC analog below threshold (DFF.Q = 0): `REF` follows `HB_7_8`.
+6. PA11 (`COUNT_PULSE`) shows the expected AND:
    - DFF.Q = 1: `COUNT_PULSE` follows `HB_1_2`.
    - DFF.Q = 0: `COUNT_PULSE` stays low.
-8. **TC0+TC1 window standalone**: with TCC0 running and `N=187500`
-   (500 ms window), `TC0_IRQn` fires every 500 ms ±30 ppm.
-9. **TC2 duty with forced Q = 1**: count at window boundary ≈ `N` ±30 ppm.
-10. **TC2 duty with forced Q = 0**: count at window boundary = 0.
-11. Closed loop: drive PA05 with a known-duty waveform synchronized to the
-    heartbeat; verify the TC2/TC0 ratio matches expectations.
-12. Stability: repeated windows show stable readings, no boundary drift,
+7. **Window ISR**: PA13 pulses once per window; `TC0_IRQn` fires every
+   `N` heartbeat periods. ISR-duration (PA13 high time) must fit inside one
+   window.
+8. **TC2 duty with forced Q = 1** (PA02 high): window count ≈ `N`.
+9. **TC2 duty with forced Q = 0** (PA02 low): window count = 0.
+10. Closed loop: drive PA02 with a known-duty waveform synchronized to the
+    heartbeat; verify the count tracks.
+11. Stability: repeated windows show stable readings, no boundary drift,
     no missed `TC0_IRQn`.
 
-If step 5 fails (DFF.Q is not stable level updating only on HB_1_2 edges),
-the SEQ1 DFF is mis-configured; check `SEQCTRL[1] = SEQSEL_DFF`, `LUTCTRL2`
-and `LUTCTRL3` truths and enables.
+### Integration bring-up (N = 8) — `src/single_channel_nodff.hpp`
+
+The firmware self-test drives PA02 (GPIO) through two 5 s phases — low
+(expected duty 0) and high (expected duty `N`=8) — and prints
+phase / expected / observed duty / AC state / window count every ~500 ms.
+At small N the duty/window boundary alignment race is visible: the duty
+counter increments on the COUNT_PULSE at each period *start* while the
+window counter wraps on `TCC0_OVF` at each period *end*, so the high-phase
+reading may land at `N`, `N-1`, or `N+1`. If it is a consistent off-by-one,
+adjust `CC[0]` or document the alignment; PA13 + the heartbeat on the scope
+make the cause observable. Set `SC_NODFF_SELF_DRIVE 0` to feed PA02 from an
+external generator instead (expected value then unknown to the firmware).
+
+If step 4 fails (DFF.Q not a stable level updating only on HB_1_2 edges),
+the SEQ1 DFF is mis-configured; check `SEQCTRL[1] = SEQSEL_DFF`, `LUTCTRL3`
+`FILTSEL`+`EDGESEL`, and the LUT2/LUT3 truths and enables.
 
 If step 7 produces glitches near AC_CMP0 transitions, the runt-pulse race
 described in §15 is occurring; consider falling back to the external DFF
@@ -659,8 +675,9 @@ the single-channel workflow even before the dual-channel hardware
 arrives.
 
 The no-DFF variant specifically reduces the BOM (no DFF chip, no
-clock fanout, no DFF placement) and frees PA08, PA18, and PA12 on the
-package. Whether it is the right choice for the production
+clock fanout, no DFF placement) and, with the COMP2-direct D-input,
+frees PA08 and PA12 (PA18 is reused for the Q→REF-mux jumper). Whether
+it is the right choice for the production
 single-channel board depends on §15 (runt-pulse characterization) and
 §16 (open verifications).
 

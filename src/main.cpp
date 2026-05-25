@@ -3,7 +3,7 @@
 #include "quartz_test.hpp"
 #include "serial.hpp"
 #include "timebase.hpp"
-#include "ccl_seq_dff_test.hpp"
+#include "single_channel_nodff.hpp"
 
 int main(void)
 {
@@ -14,8 +14,7 @@ int main(void)
     QuartzTest::init();
     QuartzTest::report_once();
 
-    CclSeqDffTest::run();
-    //AcClockProbeTest::run();
+    SingleChannelNoDFF::run();  // does not return
 
     for (;;)
         __WFI();
